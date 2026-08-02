@@ -572,13 +572,18 @@ export const parseTTML = (text: string, preferredLang = ""): LyricLine[] => {
           );
           const rubyBaseTime = rubyBaseChild
             ? {
-                startTime: rubyBaseChild.getAttribute("begin") ? parseTTMLTime(rubyBaseChild.getAttribute("begin")!) : 0,
-                endTime: rubyBaseChild.getAttribute("end") ? parseTTMLTime(rubyBaseChild.getAttribute("end")!) : 0,
+                startTime: rubyBaseChild.getAttribute("begin")
+                  ? parseTTMLTime(rubyBaseChild.getAttribute("begin")!)
+                  : 0,
+                endTime: rubyBaseChild.getAttribute("end")
+                  ? parseTTMLTime(rubyBaseChild.getAttribute("end")!)
+                  : 0,
               }
             : null;
 
           // 收集 base span 后紧跟的 text 注音（简化格式展开后的结构）
-          const rubySegments = rubyRole === "base" ? collectRubySegments(span.nextElementSibling) : undefined;
+          const rubySegments =
+            rubyRole === "base" ? collectRubySegments(span.nextElementSibling) : undefined;
 
           // 优先使用 ruby base 的时间戳（来自 ttml:text），否则使用 span 自己的时间戳
           const effectiveBegin = rubyBaseTime?.startTime ?? (wb ? parseTTMLTime(wb) : 0);

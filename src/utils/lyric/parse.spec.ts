@@ -89,7 +89,7 @@ describe("lyric parse", () => {
       '<span begin="0" end="500">Dai</span> ',
       '<span begin="200" end="300"><tts:ruby base="行"><tts:ruby:textContainer><tts:ruby:text begin="200" end="250">い</tts:ruby:text></tts:ruby:textContainer></tts:ruby></span>',
       '<span begin="300" end="400"><tts:ruby base="く"><tts:ruby:textContainer><tts:ruby:text begin="300" end="400">こう</tts:ruby:text></tts:ruby:textContainer></tts:ruby></span>',
-      '</p></body></tt>',
+      "</p></body></tt>",
     ].join("");
 
     const lines = parseTTML(ttml);
@@ -118,7 +118,7 @@ describe("lyric parse", () => {
       '<span begin="0" end="500">Dai</span> ',
       '<span tts:ruby="container"><span tts:ruby="base">行</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="200" end="250">い</span></span></span>',
       '<span tts:ruby="container"><span tts:ruby="base">く,</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="250" end="300">こう</span></span></span>',
-      '</p></body></tt>',
+      "</p></body></tt>",
     ].join("");
 
     const lines = parseTTML(ttml);
