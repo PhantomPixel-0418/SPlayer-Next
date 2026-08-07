@@ -7,6 +7,7 @@ import { useCollectionSubscribe } from "@/composables/collection/useCollectionSu
 import { usePlaylistManage } from "@/composables/collection/usePlaylistManage";
 import SongList from "@/components/list/SongList.vue";
 import { formatTime } from "@/utils/time";
+import { formatPlayCount } from "@/utils/format/playCount";
 import * as player from "@/core/player";
 import IconLucidePencil from "~icons/lucide/pencil";
 import IconLucideTrash2 from "~icons/lucide/trash-2";
@@ -18,7 +19,7 @@ import IconLucideUser from "~icons/lucide/user";
 import IconMaterialSymbolsFavoriteRounded from "~icons/material-symbols/favorite-rounded";
 import IconMaterialSymbolsFavoriteOutlineRounded from "~icons/material-symbols/favorite-outline-rounded";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -190,12 +191,24 @@ onBeforeUnmount(() => {
         :class="collapsed ? 'gap-3' : 'gap-5'"
       >
         <!-- 封面 -->
-        <SImg
-          :src="collection.cover"
-          :alt="collection.title"
-          class="rounded-xl shrink-0 transition-[width,height] duration-300"
-          :class="collapsed ? 'size-20' : 'size-40'"
-        />
+        <div class="relative shrink-0">
+          <SImg
+            :src="collection.cover"
+            :alt="collection.title"
+            class="rounded-xl shrink-0 transition-[width,height] duration-300"
+            :class="collapsed ? 'size-20' : 'size-40'"
+          />
+          <!-- 播放次数徽标 -->
+          <div
+            v-if="collection.playCount && collection.playCount > 0"
+            class="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5 rounded-md bg-black/50 px-1 py-0.5"
+          >
+            <IconLucidePlay class="size-2.5 fill-current text-white" />
+            <span class="text-[10px] font-medium text-white tabular-nums">
+              {{ formatPlayCount(collection.playCount, locale) }}
+            </span>
+          </div>
+        </div>
         <!-- 信息 -->
         <div class="flex-1 flex flex-col min-w-0">
           <div

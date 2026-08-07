@@ -43,6 +43,7 @@ export interface QMPlaylistItem {
   cover?: string;
   creator?: string;
   trackCount?: number;
+  playCount?: number;
 }
 
 export const qqAlbumCover = (mid: string, size = 300): string =>
@@ -135,4 +136,5 @@ export const qqPlaylistToCoverItem = (playlist: QMPlaylistItem): CoverItem => ({
   cover: playlist.cover,
   subtitle: playlist.creator ?? "",
   trackCount: playlist.trackCount ?? 0,
+  playCount: playlist.playCount,
 });
