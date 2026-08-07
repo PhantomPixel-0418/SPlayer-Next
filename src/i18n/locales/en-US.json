@@ -6,6 +6,7 @@
     "downloading": "Downloading",
     "installNow": "Restart & Install",
     "goDownload": "Go to Download",
+    "goStore": "Update in Store",
     "upToDate": "You're on the latest version",
     "readyToast": "Update ready — restart to install",
     "failed": "Update failed, please try again later"
@@ -87,9 +88,10 @@
     }
   },
   "agreementUpdate": {
-    "title": "User Agreement Updated",
+    "title": "User Agreement & Disclaimer Updated",
     "subtitle": "The agreement has changed. Please re-read and accept to continue",
-    "accept": "I've read and agree, continue"
+    "accept": "I've read and agree, continue",
+    "reject": "Decline & Exit"
   },
   "common": {
     "confirm": "Confirm",
@@ -737,7 +739,8 @@
       "database": "Database Management",
       "backupReset": "Backup & Reset",
       "debug": "Debug",
-      "preset": "OCD Settings"
+      "preset": "OCD Settings",
+      "envInfo": "Environment Info"
     },
     "about": {
       "checkUpdate": "Check for Updates",
@@ -746,8 +749,11 @@
       "openLogs": "Open Logs",
       "officialSite": "Official Site",
       "showMore": "More Contributors",
-      "collapse": "Collapse"
+      "collapse": "Collapse",
+      "commit": "Commit",
+      "date": "Date"
     },
+    "storeVersion": "Store",
     "language": {
       "label": "Language",
       "description": "Switch the display language"
@@ -851,6 +857,10 @@
     "spectrumBarWidth": {
       "label": "Bar Width",
       "description": "Smaller values give thinner, denser bars"
+    },
+    "reverseSpectrum": {
+      "label": "Reverse Spectrum",
+      "description": "When enabled, the frequency of the bars decreases from the center toward the sides; otherwise it increases."
     },
     "lyricSourcePreference": {
       "label": "Lyric Source Preference",
@@ -956,7 +966,8 @@
         "openPlayer": "Open player view",
         "closePlayer": "Close player view",
         "togglePlaylist": "Show / hide playlist",
-        "openSearch": "Open search"
+        "openSearch": "Open search",
+        "searchInPage": "Search in page"
       }
     },
     "engine": {
