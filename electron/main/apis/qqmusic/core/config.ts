@@ -2,6 +2,8 @@
  * QM API 通用常量
  */
 
+import he from "he";
+
 /** 统一接口入口（移动端 musicu） */
 export const QM_API_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
 
@@ -40,7 +42,15 @@ export const formatSingerName = (
 ): string => {
   if (!singers?.length) return "";
   return singers
-    .map((item) => item[key])
+    .map((item) => decodeName(item[key]))
     .filter((item): item is string => !!item)
     .join(join);
+};
+
+/**
+ * HTML 实体反转义（he 库通用解码，支持所有命名实体和数字实体）
+ */
+export const decodeName = (str: string | null | undefined): string => {
+  if (!str) return "";
+  return he.decode(str);
 };

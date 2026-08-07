@@ -1,7 +1,7 @@
 /** QM 专辑歌曲列表 */
 
 import { qmRequest } from "../core/request";
-import { formatSingerName } from "../core/config";
+import { formatSingerName, decodeName } from "../core/config";
 import type { QMModule } from "../core/types";
 
 interface AlbumSong {
@@ -35,10 +35,10 @@ const album: QMModule = async (params) => {
       {
         id: String(song.id ?? ""),
         mid: song.mid,
-        name: song.title ?? "",
+        name: decodeName(song.title),
         artist: formatSingerName(song.singer),
         artists: song.singer ?? [],
-        album: song.album?.name ?? "",
+        album: decodeName(song.album?.name),
         albumMid: song.album?.mid ?? mid,
         duration: (song.interval ?? 0) * 1000,
       },

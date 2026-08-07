@@ -5,7 +5,7 @@
  * session / search_id 偶发校验错误。详情接口仍走 musicu.fcg。
  */
 
-import { QM_HEADERS, formatSingerName } from "../core/config";
+import { QM_HEADERS, formatSingerName, decodeName } from "../core/config";
 import type { QMModule } from "../core/types";
 
 const SEARCH_URL = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp";
@@ -92,10 +92,10 @@ const searchSongs = async (keywords: string, page: number, limit: number) => {
   const songs = (bucket?.list ?? []).map((song) => ({
     id: String(song.songid ?? ""),
     mid: song.songmid ?? "",
-    name: song.songname ?? "",
+    name: decodeName(song.songname),
     artist: formatSingerName(song.singer),
     artists: song.singer ?? [],
-    album: song.albumname ?? "",
+    album: decodeName(song.albumname),
     albumMid: song.albummid ?? "",
     duration: (song.interval ?? 0) * 1000,
     mediaMid: song.media_mid ?? "",
@@ -115,9 +115,9 @@ const searchAlbums = async (keywords: string, page: number, limit: number) => {
   const bucket = body.data?.album as SearchBucket<QMAlbum> | undefined;
   const albums = (bucket?.list ?? []).map((album) => ({
     id: album.albumMID ?? String(album.albumID ?? ""),
-    name: album.albumName ?? "",
+    name: decodeName(album.albumName),
     cover: secureUrl(album.albumPic),
-    artist: album.singerName ?? "",
+    artist: decodeName(album.singerName),
     artistMid: album.singerMID ?? "",
     trackCount: album.song_count ?? 0,
   }));
@@ -130,7 +130,7 @@ const searchArtists = async (keywords: string, page: number, limit: number) => {
   const bucket = body.data?.singer as SearchBucket<QMArtist> | undefined;
   const artists = (bucket?.list ?? []).map((artist) => ({
     id: artist.singerMID ?? String(artist.singerID ?? ""),
-    name: artist.singerName ?? "",
+    name: decodeName(artist.singerName),
     cover: secureUrl(artist.singerPic),
     albumCount: artist.albumNum ?? 0,
     songCount: artist.songNum ?? 0,
@@ -154,9 +154,9 @@ const searchPlaylists = async (keywords: string, page: number, limit: number) =>
   if (body.code !== 0) throw new Error(`QM 歌单搜索失败: ${body.code}`);
   const playlists = (body.data?.list ?? []).map((playlist) => ({
     id: playlist.dissid ?? "",
-    name: playlist.dissname ?? "",
+    name: decodeName(playlist.dissname),
     cover: secureUrl(playlist.imgurl),
-    creator: playlist.creator?.name ?? "",
+    creator: decodeName(playlist.creator?.name),
     trackCount: playlist.song_count ?? 0,
     playCount: playlist.listennum ?? 0,
   }));

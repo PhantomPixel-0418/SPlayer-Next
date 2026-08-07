@@ -1,7 +1,7 @@
 /** QM 歌手详情、热门歌曲与专辑 */
 
 import { qmRequest } from "../core/request";
-import { formatSingerName } from "../core/config";
+import { formatSingerName, decodeName } from "../core/config";
 import type { QMModule } from "../core/types";
 
 interface SingerSong {
@@ -48,17 +48,17 @@ const artist: QMModule = async (params) => {
   const songs = (songsData.songlist ?? []).map((song) => ({
     id: String(song.id ?? ""),
     mid: song.mid ?? "",
-    name: song.title ?? song.name ?? "",
+    name: decodeName(song.title ?? song.name),
     artist: formatSingerName(song.singer),
     artists: song.singer ?? [],
-    album: song.album?.name ?? "",
+    album: decodeName(song.album?.name),
     albumMid: song.album?.mid ?? "",
     duration: (song.interval ?? 0) * 1000,
   }));
   const albums = (albumsData.list ?? []).map((album) => ({
     id: album.album_mid ?? "",
-    name: album.album_name ?? "",
-    artist: album.singer_name ?? songsData.singer_info?.name ?? "",
+    name: decodeName(album.album_name),
+    artist: decodeName(album.singer_name ?? songsData.singer_info?.name),
     trackCount: album.latest_song?.song_count ?? 0,
     publishTime: album.pub_time,
   }));
@@ -67,7 +67,7 @@ const artist: QMModule = async (params) => {
     artist: {
       id: String(songsData.singer_info?.id ?? ""),
       mid: songsData.singer_info?.mid ?? mid,
-      name: songsData.singer_info?.name ?? "",
+      name: decodeName(songsData.singer_info?.name),
       songCount: songsData.total_song ?? songs.length,
       albumCount: songsData.total_album ?? albumsData.total ?? albums.length,
     },

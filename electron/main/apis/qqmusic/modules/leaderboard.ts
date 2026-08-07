@@ -10,7 +10,7 @@
  */
 
 import { qmRequest } from "../core/request";
-import { formatSingerName } from "../core/config";
+import { formatSingerName, decodeName } from "../core/config";
 import type { QMModule } from "../core/types";
 
 interface ToplistSong {
@@ -46,17 +46,17 @@ const leaderboard: QMModule = async (params) => {
     .map((song) => ({
       id: String(song.id ?? ""),
       mid: song.mid ?? "",
-      name: song.title ?? "",
+      name: decodeName(song.title),
       artist: formatSingerName(song.singer),
-      album: song.album?.name ?? "",
+      album: decodeName(song.album?.name),
       albumMid: song.album?.mid ?? "",
       duration: (song.interval ?? 0) * 1000,
     }));
 
   return {
     code: 200,
-    title: data?.title ?? "",
-    subTitle: data?.titleDetail ?? "",
+    title: decodeName(data?.title),
+    subTitle: decodeName(data?.titleDetail),
     updateTime: data?.updateTime ?? "",
     cover: data?.headPicUrl ?? "",
     songs,
