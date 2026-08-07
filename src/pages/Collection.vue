@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
         :class="collapsed ? 'gap-3' : 'gap-5'"
       >
         <!-- 封面 -->
-        <div class="relative shrink-0">
+        <div class="relative shrink-0 overflow-visible">
           <SImg
             :src="collection.cover"
             :alt="collection.title"
@@ -200,12 +200,13 @@ onBeforeUnmount(() => {
           />
           <!-- 播放次数徽标 -->
           <div
-            v-if="collection.playCount && collection.playCount > 0"
-            class="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5 rounded-md bg-black/50 px-1 py-0.5"
+            v-show="collection.playCount && collection.playCount > 0"
+            class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/60 px-1.5 py-1 pointer-events-none transition-opacity duration-200"
+            :class="collapsed ? 'opacity-0' : 'opacity-100'"
           >
-            <IconLucidePlay class="size-2.5 fill-current text-white" />
-            <span class="text-[10px] font-medium text-white tabular-nums">
-              {{ formatPlayCount(collection.playCount, locale) }}
+            <IconLucidePlay class="size-3 fill-current text-white" />
+            <span class="text-xs font-medium text-white tabular-nums">
+              {{ formatPlayCount(collection.playCount ?? 0, locale) }}
             </span>
           </div>
         </div>
