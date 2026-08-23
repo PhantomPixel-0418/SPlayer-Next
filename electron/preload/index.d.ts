@@ -65,6 +65,7 @@ declare global {
         testNetworkProxy: () => Promise<boolean>;
         onProtocolUrl: (callback: (url: string) => void) => () => void;
         consumePendingProtocolUrl: () => Promise<string | null>;
+        preventSleep: (val: boolean) => void;
       };
       library: LibraryApi;
       playlist: PlaylistApi;

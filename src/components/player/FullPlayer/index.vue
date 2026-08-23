@@ -11,6 +11,7 @@ import { usePlaylistPicker } from "@/composables/usePlaylistPicker";
 import { useImmersiveMode } from "@/composables/useImmersiveMode";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { useProgressLyric } from "@/composables/useProgressLyric";
+import { useWakeLock } from "@vueuse/core";
 import Lyrics from "@/components/player/Lyrics/index.vue";
 import AMLLLyrics from "@/components/player/Lyrics/AMLLLyrics.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
@@ -28,6 +29,8 @@ const settings = useSettingsStore();
 const fav = useFavorite();
 const { enqueue: enqueueDownload } = useDownload();
 const { t } = useI18n();
+const isDesktop = computed(() => window.api.system.installType !== undefined);
+const { activate: activateWakeLock } = useWakeLock({ enabled: false });
 const {
   isPlaying,
   isLoading,
@@ -104,6 +107,19 @@ watch(
       if (isPlaying.value) lyricRef.value?.resume();
     });
   },
+);
+
+// 阻止系统息屏：Electron 走 IPC，浏览器走 Wake Lock API
+watch(
+  () => settings.player.preventSleep,
+  (val) => {
+    if (isDesktop.value) {
+      window.api.system.preventSleep(val);
+    } else {
+      activateWakeLock(val);
+    }
+  },
+  { immediate: true },
 );
 
 const fullscreenCover = computed(() => settings.player.coverLayout === "fullscreen");
