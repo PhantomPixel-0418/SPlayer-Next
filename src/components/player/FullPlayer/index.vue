@@ -122,6 +122,12 @@ watch(
   { immediate: true },
 );
 
+onBeforeUnmount(() => {
+  if (isDesktop.value) {
+    window.api.system.preventSleep(false);
+  }
+});
+
 const fullscreenCover = computed(() => settings.player.coverLayout === "fullscreen");
 
 const coverCentered = computed(() => {
