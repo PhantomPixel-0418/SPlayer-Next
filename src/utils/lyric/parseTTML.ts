@@ -321,6 +321,10 @@ export const parseTTML = (text: string, preferredLang = ""): LyricLine[] => {
   const transliterations = collectTransliterations(doc);
   const lines: LyricLine[] = [];
 
+  // State for Apple Music-style duet detection
+  let lastPersonAgentId: string | null = null;
+  let lastPersonIsDuet = false;
+
   /**
    * 递归解析段落元素（支持嵌套背景行）
    */
@@ -339,13 +343,34 @@ export const parseTTML = (text: string, preferredLang = ""): LyricLine[] => {
       translatedLyric: "",
       romanLyric: "",
       isBG,
-      // 合唱（type="group"）行居中、不算对唱，仅非主唱的个人 agent 才右对齐
-      isDuet: isBG
-        ? isDuet
-        : !!lineAgent && lineAgent !== mainAgent && agentTypes.get(lineAgent) !== "group",
+      // isDuet will be determined by the state machine below
+      isDuet: false,
       startTime: begin ? parseTTMLTime(begin) : 0,
       endTime: end ? parseTTMLTime(end) : 0,
     };
+
+    // Apple Music style duet state machine
+    const agentId = lineAgent ?? "v1";
+    const agentType = agentTypes.get(agentId) ?? "";
+    let currentIsDuet = isBG ? isDuet : false;
+    if (!isBG) {
+      if (agentType === "group") {
+        currentIsDuet = false;
+      } else {
+        if (lastPersonAgentId === null) {
+          currentIsDuet = agentType === "other";
+          lastPersonAgentId = agentId;
+          lastPersonIsDuet = currentIsDuet;
+        } else if (lastPersonAgentId === agentId) {
+          currentIsDuet = lastPersonIsDuet;
+        } else {
+          currentIsDuet = !lastPersonIsDuet;
+          lastPersonAgentId = agentId;
+          lastPersonIsDuet = currentIsDuet;
+        }
+      }
+    }
+    line.isDuet = currentIsDuet;
 
     // 应用 iTunes 翻译与行级音译
     const itunesKey = isBG ? parentKey : getAttr(el, "key");
