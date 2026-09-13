@@ -106,7 +106,12 @@ const cleanupDynamicCover = (): void => {
 
 watch(
   () =>
-    [displayTrack.value?.id, settings.player.dynamicCover, settings.player.coverLayout] as const,
+    [
+      displayTrack.value?.id,
+      settings.player.dynamicCover,
+      settings.player.coverLayout,
+      status.trackLoading,
+    ] as const,
   () => {
     fetchDynamicCover();
   },
