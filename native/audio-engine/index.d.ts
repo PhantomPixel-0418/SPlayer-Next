@@ -24,6 +24,8 @@ export declare class AudioPlayer {
   getDuration(): number
   /** 获取当前播放状态快照 */
   getStatus(): JsPlayerStatus
+  /** 获取当前真实的音频流与输出参数 */
+  getStreamInfo(): JsAudioStreamInfo
   /** 启用/禁用 FFT 频谱推送（前端需要显示频谱时启用，不显示时禁用以节省性能） */
   setFftEnabled(enabled: boolean): void
   /** 获取 FFT 推送开关状态 */
@@ -160,6 +162,36 @@ export interface JsAudioDevice {
   name: string
   /** 是否为系统默认设备 */
   isDefault: boolean
+}
+
+/** 当前真实音频流与硬件输出信息 */
+export interface JsAudioStreamInfo {
+  /** 当前生效的音频输出设备名称 */
+  deviceName: string
+  /** 是否为独占模式输出 */
+  isExclusive: boolean
+  /** 实际输出流采样率（Hz） */
+  outputSampleRate: number
+  /** 实际输出流声道数 */
+  outputChannels: number
+  /** 实际输出流位深（bits） */
+  outputBits: number
+  /** 音源原始采样率（Hz） */
+  sourceSampleRate: number
+  /** 音源原始位深（bits） */
+  sourceBits: number
+  /** 是否发生了重采样（音源采样率 != 硬件输出采样率） */
+  isResampling: boolean
+  /** 均衡器是否启用 */
+  isEqualizerActive: boolean
+  /** 变速变调是否激活 */
+  isTempoActive: boolean
+  /** 当前播放倍速 */
+  speed: number
+  /** 响度均衡是否启用 */
+  isNormalizationActive: boolean
+  /** 输出限幅器是否激活（DSP 介入时为 true，纯直通时为 false） */
+  isLimiterActive: boolean
 }
 
 /** 一条外部歌词，返回给 JS 侧（仅格式和路径，内容按需加载） */

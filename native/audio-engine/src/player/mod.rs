@@ -526,6 +526,53 @@ impl InnerPlayer {
     pub fn pitch_sync(&self) -> bool {
         self.tempo.lock().pitch_sync()
     }
+
+    /// 获取当前真实的音频流与输出信息
+    pub fn stream_info(&self) -> crate::bindings::JsAudioStreamInfo {
+        let (device_name, is_exclusive, output_sample_rate, output_channels, output_bits) =
+            if let Some(output) = &self.output {
+                (
+                    output.device_name(),
+                    output.is_exclusive(),
+                    output.sample_rate(),
+                    output.channels() as u32,
+                    output.bits(),
+                )
+            } else {
+                ("System Default".to_string(), false, 0, 0, 0)
+            };
+
+        let is_resampling = if output_sample_rate > 0 && self.original_sample_rate > 0 {
+            output_sample_rate != self.original_sample_rate
+        } else {
+            false
+        };
+
+        let is_equalizer_active = self.equalizer.lock().enabled();
+        let tempo_locked = self.tempo.lock();
+        let is_tempo_active = !tempo_locked.is_bypass();
+        let speed = tempo_locked.speed() as f64;
+        drop(tempo_locked);
+
+        let is_normalization_active = self.normalization_enabled;
+        let is_limiter_active = is_equalizer_active || is_tempo_active || is_normalization_active;
+
+        crate::bindings::JsAudioStreamInfo {
+            device_name,
+            is_exclusive,
+            output_sample_rate,
+            output_channels,
+            output_bits,
+            source_sample_rate: self.original_sample_rate,
+            source_bits: self.original_bits,
+            is_resampling,
+            is_equalizer_active,
+            is_tempo_active,
+            speed,
+            is_normalization_active,
+            is_limiter_active,
+        }
+    }
 }
 
 #[cfg(test)]

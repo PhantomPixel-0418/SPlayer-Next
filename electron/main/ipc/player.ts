@@ -503,6 +503,15 @@ export const registerPlayerIpc = (): void => {
     };
   });
 
+  // 获取当前真实的音频流与输出参数
+  ipcMain.handle("player:getStreamInfo", () => {
+    try {
+      return { success: true, data: getPlayer().getStreamInfo() };
+    } catch (error) {
+      return fail(ErrorCode.UNKNOWN, error);
+    }
+  });
+
   // 重建音频输出设备
   ipcMain.handle("player:reinit", async () => {
     try {

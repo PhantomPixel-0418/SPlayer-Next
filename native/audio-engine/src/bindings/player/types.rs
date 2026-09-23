@@ -92,3 +92,34 @@ pub struct JsPlayerStatus {
     /// 是否已播放完毕
     pub is_finished: bool,
 }
+
+/// 当前真实音频流与硬件输出信息
+#[napi(object)]
+pub struct JsAudioStreamInfo {
+    /// 当前生效的音频输出设备名称
+    pub device_name: String,
+    /// 是否为独占模式输出
+    pub is_exclusive: bool,
+    /// 实际输出流采样率（Hz）
+    pub output_sample_rate: u32,
+    /// 实际输出流声道数
+    pub output_channels: u32,
+    /// 实际输出流位深（bits）
+    pub output_bits: u32,
+    /// 音源原始采样率（Hz）
+    pub source_sample_rate: u32,
+    /// 音源原始位深（bits）
+    pub source_bits: u32,
+    /// 是否发生了重采样（音源采样率 != 硬件输出采样率）
+    pub is_resampling: bool,
+    /// 均衡器是否启用
+    pub is_equalizer_active: bool,
+    /// 变速变调是否激活
+    pub is_tempo_active: bool,
+    /// 当前播放倍速
+    pub speed: f64,
+    /// 响度均衡是否启用
+    pub is_normalization_active: bool,
+    /// 输出限幅器是否激活（DSP 介入时为 true，纯直通时为 false）
+    pub is_limiter_active: bool,
+}

@@ -8,16 +8,27 @@ fn process_audio_chunk(
     limiter: &mut OutputLimiter,
     tempo_scratch: &mut Vec<f32>,
     channels: u16,
+    normalization_enabled: bool,
 ) -> AudioChunk {
     if chunk.player_samples.is_empty() {
         return chunk;
     }
 
-    equalizer
-        .lock()
-        .process_interleaved(&mut chunk.player_samples);
+    let eq_enabled = {
+        let mut eq = equalizer.lock();
+        if eq.enabled() {
+            eq.process_interleaved(&mut chunk.player_samples);
+            true
+        } else {
+            false
+        }
+    };
+
     if tempo.lock().is_bypass() {
-        limiter.process(&mut chunk.player_samples, channels);
+        // 直通模式下（未启用均衡器、未变速变调且未启用响度归一化），绕过限幅器以保障满幅 1.0 母带原样输出（Bit-perfect）
+        if eq_enabled || normalization_enabled {
+            limiter.process(&mut chunk.player_samples, channels);
+        }
         return chunk;
     }
 
@@ -39,6 +50,7 @@ fn run_dsp_loop(shared: &Shared, equalizer: &Mutex<Equalizer>, tempo: &Mutex<Str
             &mut limiter,
             &mut tempo_scratch,
             shared.channels(),
+            shared.is_normalization_enabled(),
         );
         shared.push_output(chunk);
         if shared.is_stopping() {

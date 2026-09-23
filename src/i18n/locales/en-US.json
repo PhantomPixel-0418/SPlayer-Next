@@ -106,6 +106,7 @@
     "delete": "Delete",
     "enable": "Enable",
     "enabled": "Enabled",
+    "disabled": "Disabled",
     "active": "Active",
     "saveAndRelaunch": "Save & Relaunch",
     "reset": "Reset",
@@ -574,7 +575,11 @@
     }
   },
   "quality": {
-    "details": "Audio Quality",
+    "outputInfo": "Output Information",
+    "outputSection": "Output Information",
+    "outputMode": "Output Mode",
+    "dspSection": "Audio Processing",
+    "details": "Audio Details",
     "codec": "Codec",
     "sampleRate": "Sample Rate",
     "bitDepth": "Bit Depth",
@@ -582,7 +587,10 @@
     "channels": "Channels",
     "stereo": "Stereo",
     "mono": "Mono",
-    "multiChannel": "Multi-channel"
+    "multiChannel": "Multi-channel",
+    "tempoPitch": "Speed & Pitch",
+    "limiter": "Output Limiter",
+    "resampling": "Resampling"
   },
   "playlist": {
     "title": "Playlist",

@@ -99,6 +99,12 @@ impl AudioPlayer {
         }
     }
 
+    /// 获取当前真实的音频流与输出参数
+    #[napi]
+    pub fn get_stream_info(&self) -> JsAudioStreamInfo {
+        self.inner.lock().stream_info()
+    }
+
     /// 启用/禁用 FFT 频谱推送（前端需要显示频谱时启用，不显示时禁用以节省性能）
     #[napi]
     pub fn set_fft_enabled(&self, enabled: bool) {

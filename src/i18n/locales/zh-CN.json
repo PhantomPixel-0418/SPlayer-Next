@@ -94,6 +94,7 @@
     "delete": "删除",
     "enable": "启用",
     "enabled": "已启用",
+    "disabled": "未启用",
     "active": "已启用",
     "saveAndRelaunch": "保存并重启",
     "reset": "重置",
@@ -562,6 +563,10 @@
     }
   },
   "quality": {
+    "outputInfo": "输出信息",
+    "outputSection": "输出信息",
+    "outputMode": "输出模式",
+    "dspSection": "音频处理",
     "details": "音质详情",
     "codec": "编码格式",
     "sampleRate": "采样率",
@@ -570,7 +575,10 @@
     "channels": "声道",
     "stereo": "立体声",
     "mono": "单声道",
-    "multiChannel": "多声道"
+    "multiChannel": "多声道",
+    "tempoPitch": "变速变调",
+    "limiter": "输出限幅器",
+    "resampling": "重采样"
   },
   "playlist": {
     "title": "播放列表",

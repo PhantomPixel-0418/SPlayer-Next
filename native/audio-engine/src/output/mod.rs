@@ -130,6 +130,32 @@ impl AudioOutput {
         self.config.channels()
     }
 
+    /// 实际输出设备名称
+    pub fn device_name(&self) -> String {
+        self.device
+            .description()
+            .ok()
+            .map(|desc| desc.name().to_owned())
+            .unwrap_or_else(|| self.device.to_string())
+    }
+
+    /// 是否处于独占模式输出
+    pub fn is_exclusive(&self) -> bool {
+        #[cfg(target_os = "windows")]
+        return self.exclusive.is_some();
+        #[cfg(not(target_os = "windows"))]
+        false
+    }
+
+    /// 实际输出流有效位深（bits）
+    pub fn bits(&self) -> u32 {
+        #[cfg(target_os = "windows")]
+        if let Some(format) = &self.exclusive {
+            return format.valid_bits as u32;
+        }
+        self.config.sample_format().sample_size() as u32 * 8
+    }
+
     /// 实际开流失败时切换到共享格式；调用方必须按新格式重新创建样本缓冲。
     pub(crate) fn fallback_to_shared(
         &mut self,

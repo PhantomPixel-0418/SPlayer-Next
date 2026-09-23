@@ -20,26 +20,42 @@ mod mta {
 
     type Job = Box<dyn FnOnce() + Send + 'static>;
 
-    static WORKER: OnceLock<Option<SyncSender<Job>>> = OnceLock::new();
+    static WORKER: OnceLock<Result<SyncSender<Job>, String>> = OnceLock::new();
 
     fn worker() -> Result<&'static SyncSender<Job>> {
         WORKER
             .get_or_init(|| {
+                let (init_tx, init_rx) = sync_channel::<Result<(), String>>(1);
                 let (job_tx, job_rx) = sync_channel::<Job>(1);
-                thread::Builder::new()
+                let handle = thread::Builder::new()
                     .name("audio-mta-worker".into())
                     .spawn(move || {
-                        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+                        let init_result = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
+                            .ok()
+                            .map_err(|e| format!("MTA 初始化失败: {e}"));
+                        let success = init_result.is_ok();
+                        let _ = init_tx.send(init_result);
+                        if !success {
+                            return;
+                        }
                         for job in job_rx {
                             // cpal 的设备枚举路径上有 unwrap/expect，单个任务 panic 不能带走整条线程
                             let _ = catch_unwind(AssertUnwindSafe(job));
                         }
-                    })
-                    .ok()
-                    .map(|_| job_tx)
+                    });
+
+                if let Err(e) = handle {
+                    return Err(format!("启动 MTA 线程失败: {e}"));
+                }
+
+                match init_rx.recv() {
+                    Ok(Ok(())) => Ok(job_tx),
+                    Ok(Err(err)) => Err(err),
+                    Err(_) => Err("MTA 线程提前退出未返回初始化状态".into()),
+                }
             })
             .as_ref()
-            .ok_or_else(|| anyhow!("启动 MTA 线程失败"))
+            .map_err(|err| anyhow!("{err}"))
     }
 
     /// 把 `f` 派给 MTA 线程执行并等待结果。调用按到达顺序串行执行
@@ -64,4 +80,15 @@ pub(super) use mta::run as run_in_mta;
 #[cfg(not(target_os = "windows"))]
 pub(super) fn run_in_mta<T, F: FnOnce() -> Result<T>>(f: F) -> Result<T> {
     f()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_in_mta_executes_closure() {
+        let result = run_in_mta(|| Ok(42)).unwrap();
+        assert_eq!(result, 42);
+    }
 }
