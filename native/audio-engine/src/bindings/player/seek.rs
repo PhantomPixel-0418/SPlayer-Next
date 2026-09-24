@@ -31,7 +31,7 @@ impl AudioPlayer {
             let mut player = self.inner.lock();
             player.take_for_async_seek()
         };
-        // 无解码线程：空闲 / 已停止 / 正在异步加载（句柄被 load 取走）。
+        // 无解码线程：空闲 / 已停止 / 正在异步加载（句柄被 load 取走）
         // 此时 seek 无意义，且绝不能走回退重载——current_source 仍指向旧曲，
         // 重载会顶掉在途的新歌加载、复活旧曲
         let Some(take) = take else {
@@ -136,7 +136,7 @@ impl AudioPlayer {
                 }
                 if let Some(src) = current_source {
                     let is_remote = src.starts_with("http://") || src.starts_with("https://");
-                    if let Err(e) = self.load(src, Some(was_playing)).await {
+                    if let Err(e) = self.load(src, Some(was_playing), None).await {
                         if is_cancelled_napi_error(&e) {
                             return Ok(());
                         }

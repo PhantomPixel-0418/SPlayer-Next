@@ -896,7 +896,7 @@
     },
     "preloadNextTrack": {
       "label": "Preload next track",
-      "description": "Fetch the next track's playback info in advance, which may increase network usage"
+      "description": "Cache and decode the next track in advance, which may increase network usage"
     },
     "outputDevice": {
       "label": "Output Device",
@@ -1102,7 +1102,9 @@
       "kugouLoginVersionTitle": "Switch KG Login Version",
       "kugouLoginVersionContent": "After switching, the current credentials will not match the new version. You must log out and scan the QR code again, or VIP privileges and high-quality playback will stop working. Switch anyway?",
       "exclusiveModeTitle": "Switch to Exclusive Mode",
-      "exclusiveModeContent": "Exclusive mode bypasses the system mixer and prefers the source sample rate and bit depth, making it suitable for external DACs / Hi-Fi gear. Player volume, EQ and other processing still apply, so bit-perfect output is not guaranteed. Other apps may be unable to play audio while exclusive. If exclusive mode is unavailable, shared mode will be attempted; it may also fail if another app holds the device exclusively. Switch anyway?"
+      "exclusiveModeContent": "Exclusive mode bypasses the system mixer and prefers the source sample rate and bit depth, making it suitable for external DACs / Hi-Fi gear. Player volume, EQ and other processing still apply, so bit-perfect output is not guaranteed. Other apps may be unable to play audio while exclusive. If exclusive mode is unavailable, shared mode will be attempted; it may also fail if another app holds the device exclusively. Switch anyway?",
+      "preloadCacheTitle": "Enable the caches required for preloading?",
+      "preloadCacheContent": "Preloading requires caching the next track's audio. Continuing will enable both song caching and streaming caching, which may increase network traffic and disk usage"
     },
     "useAMSpring": {
       "label": "Spring Animation Debug Switch",

@@ -1,0 +1,143 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- Node.js 原生集成测试 */
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { test } = require("node:test");
+const { AudioPlayer } = require(process.env.SPLAYER_AUDIO_ENGINE_MODULE || "../audio-engine.node");
+
+/**
+ * 生成可精确核对时长的双声道静音 WAV
+ * @param {string} file - 测试音频的写入路径
+ * @param {number} sampleRate - 采样率，单位为 Hz
+ * @param {number} seconds - 音频时长，单位为秒
+ */
+function writeWav(file, sampleRate, seconds) {
+  const size = sampleRate * seconds * 4;
+  const data = Buffer.alloc(44 + size);
+  data.write("RIFF");
+  data.writeUInt32LE(36 + size, 4);
+  data.write("WAVEfmt ", 8);
+  data.writeUInt32LE(16, 16);
+  data.writeUInt16LE(1, 20);
+  data.writeUInt16LE(2, 22);
+  data.writeUInt32LE(sampleRate, 24);
+  data.writeUInt32LE(sampleRate * 4, 28);
+  data.writeUInt16LE(4, 32);
+  data.writeUInt16LE(16, 34);
+  data.write("data", 36);
+  data.writeUInt32LE(size, 40);
+  fs.writeFileSync(file, data);
+}
+
+for (const exclusive of [false, true]) {
+  test(
+    `双槽位预载与复用（${exclusive ? "独占" : "共享"}输出）`,
+    {
+      skip: exclusive && process.env.SPLAYER_TEST_EXCLUSIVE !== "1",
+      timeout: 30000,
+    },
+    async (t) => {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), "splayer-preload-"));
+      const current = path.join(directory, "current.wav");
+      const next = path.join(directory, "next.wav");
+      const player = new AudioPlayer();
+      t.after(() => {
+        player.stop();
+        fs.rmSync(directory, { recursive: true, force: true });
+      });
+      if (exclusive) await player.setExclusiveMode(true);
+      writeWav(current, 48000, 8);
+      const initial = await player.load(current, false);
+      writeWav(next, initial.sampleRate, 6);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(await player.prepareNext("next", next), true);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(player.getStatus().state, "paused");
+      assert.equal(player.getPosition(), 0);
+      assert.equal(player.getDuration(), 8);
+      const loaded = await player.load(next, false, "next");
+      assert.equal(loaded.preparedPosition, 0, "必须复用已解码 PCM，而不是重新打开文件");
+      assert.equal(player.getDuration(), 6);
+      assert.equal(player.getPosition(), 0, "后台预载不得推进播放位置");
+
+      await player.prepareNext("cue", next, 2);
+      const cue = await player.load(next, false, "cue");
+      assert.equal(cue.preparedPosition, 2);
+      assert.equal(player.getPosition(), 2);
+
+      const superseded = player.prepareNext("superseded", next);
+      const latest = player.prepareNext("latest", next);
+      assert.equal(await superseded, false);
+      assert.equal(await latest, true);
+      assert.equal((await player.load(next, false, "latest")).preparedPosition, 0);
+
+      const pending = player.prepareNext("immediate-stop", next);
+      player.stop();
+      assert.equal(await pending, false);
+      await player.load(next, false);
+
+      await player.prepareNext("old", next);
+      await player.prepareNext("new", next);
+      player.cancelPrepared("old");
+      assert.equal((await player.load(next, false, "new")).preparedPosition, 0);
+
+      await player.prepareNext("cancelled", next);
+      player.cancelPrepared("cancelled");
+      assert.equal((await player.load(next, false, "cancelled")).preparedPosition, undefined);
+
+      await player.prepareNext("dsp", next);
+      player.setSpeed(1.25);
+      assert.equal(
+        (await player.load(next, false, "dsp")).preparedPosition,
+        undefined,
+        "音效参数改变后不能使用旧 PCM",
+      );
+      player.setSpeed(1);
+
+      await player.prepareNext("stopped", next);
+      player.stop();
+      assert.equal((await player.load(next, false, "stopped")).preparedPosition, undefined);
+
+      await player.play();
+      const before = player.getPosition();
+      await player.prepareNext("while-playing", next);
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      assert.equal(player.getStatus().state, "playing");
+      assert.ok(player.getPosition() > before, "准备下一曲时当前歌曲应继续播放");
+      player.cancelPrepared("while-playing");
+    },
+  );
+}
+
+test("拒绝未经缓存的远端源及无效起点", async () => {
+  const player = new AudioPlayer();
+  assert.throws(() => player.prepareNext("remote", "https://example.invalid/song.flac"), /缓存/);
+  assert.throws(() => player.prepareNext("invalid", "unused.wav", -1), /起点/);
+  player.stop();
+});
+
+test("未打开设备时也能预载，立即取消及连续替换按调用顺序生效", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "splayer-preload-cancel-"));
+  const source = path.join(directory, "audio.wav");
+  writeWav(source, 48000, 2);
+  const player = new AudioPlayer();
+  t.after(async () => {
+    player.stop();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const stopped = player.prepareNext("stop", source);
+  player.stop();
+  assert.equal(await stopped, false);
+  const cancelled = player.prepareNext("cancel", source);
+  player.cancelPrepared("cancel");
+  assert.equal(await cancelled, false);
+  const first = player.prepareNext("first", source);
+  const second = player.prepareNext("second", source);
+  assert.equal(await first, false);
+  assert.equal(await second, true);
+  assert.equal(player.getDuration(), 0);
+  assert.equal(player.getPosition(), 0);
+  assert.equal(player.getStatus().state, "stopped");
+});

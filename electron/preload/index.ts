@@ -63,6 +63,20 @@ const api = {
     > => ipcRenderer.invoke("config:importFromFile"),
   },
   player: {
+    /**
+     * 请求主进程准备下一曲的原生槽位
+     * @param id - 预载任务标识
+     * @param source - 本地音频文件或缓存文件路径
+     * @param startMs - 预载起点，单位为毫秒
+     * @returns 音频就绪时返回 true，取消或失效时返回 false
+     */
+    prepareNext: (id: string, source: string, startMs?: number): Promise<boolean> =>
+      ipcRenderer.invoke("player:prepareNext", id, source, startMs),
+    /**
+     * 请求主进程取消预载并释放对应的缓存租约
+     * @param id - 要取消的预载任务标识
+     */
+    cancelPrepared: (id: string): Promise<void> => ipcRenderer.invoke("player:cancelPrepared", id),
     // 加载音频（本地路径或网络地址）
     load: (source: string, options?: LoadOptions) =>
       ipcRenderer.invoke("player:load", source, options ?? {}),
@@ -521,9 +535,21 @@ const api = {
       // 命中查询：返回本地绝对路径或 null
       lookup: (cacheKey: string): Promise<string | null> =>
         ipcRenderer.invoke("cache:song:lookup", cacheKey),
-      // 排队下载（fire-and-forget 也可 await）
-      fetch: (cacheKey: string, source: TrackSource, streamUrl: string): Promise<string | null> =>
-        ipcRenderer.invoke("cache:song:fetch", cacheKey, source, streamUrl),
+      /**
+       * 下载歌曲到缓存，预载调用方需要等待下载完成
+       * @param cacheKey - 音源与音质对应的缓存键
+       * @param source - 歌曲来源
+       * @param streamUrl - 下载地址
+       * @param preloadId - 可选的预载消费者标识，用于租约保留和独立取消
+       * @returns 缓存文件路径，失败或取消时返回 null
+       */
+      fetch: (
+        cacheKey: string,
+        source: TrackSource,
+        streamUrl: string,
+        preloadId?: string,
+      ): Promise<string | null> =>
+        ipcRenderer.invoke("cache:song:fetch", cacheKey, source, streamUrl, preloadId),
       // 取消正在进行的下载
       cancel: (cacheKey: string): Promise<void> =>
         ipcRenderer.invoke("cache:song:cancel", cacheKey),

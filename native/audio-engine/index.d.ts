@@ -2,7 +2,7 @@
 /* eslint-disable */
 /** 音频播放器，通过 napi-rs 暴露给 Node.js */
 export declare class AudioPlayer {
-  /** 恢复播放。如果已停止或播放结束，自动从头重新加载 */
+  /** 恢复播放；如果已停止或播放结束，自动从头重新加载 */
   play(): Promise<void>
   /** 暂停播放 */
   pause(): void
@@ -49,8 +49,8 @@ export declare class AudioPlayer {
   /** 获取 FFT 频谱数据（128 个频段，值域 0.0 ~ 1.0） */
   getFftData(): JsFftData
   /**
-   * 返回 load 时缓存的原始封面数据（用于 SMTC / 全屏播放器）。
-   * 封面在 load 阶段从已打开的 FFmpeg 上下文一次性提取，不再重复打开文件。
+   * 返回 load 时缓存的原始封面数据（用于 SMTC / 全屏播放器）
+   * 封面在 load 阶段从已打开的 FFmpeg 上下文一次性提取，不再重复打开文件
    */
   getCoverRaw(): Buffer | null
   /** 设置播放速度（自动 clamp 到 [0.5, 2.0]） */
@@ -69,7 +69,7 @@ export declare class AudioPlayer {
    * 重新初始化音频输出设备（系统休眠唤醒、设备热插拔或输出流错误后调用）
    *
    * 恢复为全成全败：新输出创建失败时不启动解码、不提交状态，保留当前曲目与位置，
-   * 播放器进入暂停态并返回设备错误；在线音源不会因设备错误触发 URL 重取或 sourceError。
+   * 播放器进入暂停态并返回设备错误；在线音源不会因设备错误触发 URL 重取或 sourceError
    */
   reinitOutput(): Promise<void>
   /** 获取所有音频输出设备列表 */
@@ -104,18 +104,29 @@ export declare class AudioPlayer {
   /** 停止系统音频设备变化监听 */
   stopDeviceWatcher(): void
   /**
-   * 加载音频源，返回完整元信息（含封面路径和歌词）
-   * @param auto_play - 是否自动播放，false 时加载后立即暂停
-   *
-   * 异步三段式：
-   * 主线程只提取旧资源和配置，不在持锁时等待设备或解码 IO。
-   * 工作线程读取音源、打开暂停的输出流，按最终输出格式启动解码。
-   * 主线程校验代次后提交资源并恢复播放，过期任务的输出保持静音。
-   * 持锁阶段都是纯内存操作，主线程其它同步 NAPI 调用最多等几微秒，不会被 IO 卡住
+   * 加载音频源并返回完整元信息
+   * 文件读取和开流在工作线程完成，提交时校验代次以防过期任务恢复播放
+   * @param source - 音频文件路径或网络地址
+   * @param autoPlay - 是否自动播放，false 时加载后立即暂停
+   * @param preparedId - 待消费的预载任务标识，未命中或不兼容时执行普通加载
+   * @returns 音频元信息，复用预载时额外返回预载起点
    */
-  load(source: string, autoPlay?: boolean): Promise<JsMusicMetadata>
+  load(source: string, autoPlay?: boolean, preparedId?: string | undefined | null): Promise<JsMusicMetadata>
   /** 设置封面缓存目录（在 load 前调用一次即可） */
   setCoverCacheDir(dir: string): void
+  /**
+   * 在独立槽位中打开本地文件并提前解码，不改变当前歌曲或占用第二条输出流
+   * @param id - 用于取消和消费预载资源的任务标识
+   * @param source - 本地音频文件或已完成下载的缓存文件路径
+   * @param startPosition - 预载起点，单位为秒，默认为 0
+   * @returns 当前任务仍有效且音频已准备就绪时返回 true，否则返回 false
+   */
+  prepareNext(id: string, source: string, startPosition?: number | undefined | null): Promise<boolean>
+  /**
+   * 仅取消指定预载代次，避免迟到的取消操作清除新的下一曲
+   * @param id - 要取消的预载任务标识
+   */
+  cancelPrepared(id: string): void
   /**
    * 跳转到指定播放位置（秒）
    *
@@ -199,6 +210,8 @@ export interface JsFftData {
 
 /** 歌曲完整元信息，返回给 JS 侧（load 时一次性返回） */
 export interface JsMusicMetadata {
+  /** 复用了预载 PCM 时的起点（秒），普通加载为空 */
+  preparedPosition?: number
   title?: string
   artist?: string
   album?: string

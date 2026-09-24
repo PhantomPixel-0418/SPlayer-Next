@@ -1,3 +1,4 @@
+import { useSettingsStore } from "@/stores/settings";
 import type { SettingCategory } from "@/types/settings-schema";
 import DeviceSelector from "@/components/settings/custom/DeviceSelector.vue";
 import { isWin } from "@/utils/config";
@@ -89,6 +90,21 @@ const playerCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "player.preloadNextTrack" },
           defaultValue: false,
+          confirm: {
+            when: (next) =>
+              Boolean(next) &&
+              (!useSettingsStore().system.cache.songCache.enabled ||
+                !useSettingsStore().system.cache.songCache.cacheStreaming),
+            titleKey: "settings.confirm.preloadCacheTitle",
+            contentKey: "settings.confirm.preloadCacheContent",
+            type: "warning",
+          },
+          action: async (enabled) => {
+            if (!enabled) return;
+            const settings = useSettingsStore();
+            await settings.setSystem("cache.songCache.enabled", true);
+            await settings.setSystem("cache.songCache.cacheStreaming", true);
+          },
         },
       ],
     },

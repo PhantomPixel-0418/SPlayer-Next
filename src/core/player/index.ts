@@ -21,6 +21,7 @@ import { getDeviceVolume, setDeviceVolume } from "@/services/deviceVolume";
 import { resolveTrackSource, type ResolvedTrackSource } from "@/services/audioSource";
 import {
   consumePreloadedTrack,
+  invalidateNextTrackPreload,
   disposeNextTrackPreload,
   installNextTrackPreloadWatchers,
   scheduleNextTrackPreload,
@@ -36,6 +37,8 @@ import i18n from "@/i18n";
 
 /** 加载运行时选项 */
 interface LoadRuntimeOptions {
+  /** 待消费的原生预载槽位标识，仅用于首次加载尝试 */
+  preparedId?: string;
   /** 是否抑制错误提示 */
   suppressErrorToast?: boolean;
   /** 本次播放的来源上下文 */
@@ -126,7 +129,8 @@ const resetForLoad = (duration: number): void => {
  * @param source - 音频文件路径或网络地址
  * @param autoPlay - 是否自动播放
  * @param meta - 渲染层下发给主进程的权威 Track（用于 SMTC/托盘）
- * @param options - 加载时的内部控制项
+ * @param options - 加载时的内部控制项，可携带待消费的预载槽位标识
+ * @returns 加载成功时返回更新后的歌曲，失败时返回错误信息
  */
 export const load = async (
   source: string,
@@ -154,6 +158,7 @@ export const load = async (
       autoPlay,
       meta,
       context: options.context,
+      preparedId: options.preparedId,
     });
     // 竞态保护
     if (token !== loadToken) return { ok: false };
@@ -242,6 +247,9 @@ const shouldSuppressLoadError = (resolved: ResolvedTrackSource): boolean =>
  * @param autoPlay - 是否自动播放
  * @param shouldContinue - 竞态检查，返回 false 时放弃本轮加载
  * @param retryOnAnyFailure - 是否对任意加载失败继续换源
+ * @param initialResolved - 已解析的预载音源，首次尝试时优先使用
+ * @param preparedId - 与首次尝试音源对应的原生预载槽位标识
+ * @returns 本轮加载结果，包含取消、无法解析或已完成加载的状态
  */
 const loadTrackSourceWithFallback = async (
   track: Track,
@@ -250,6 +258,7 @@ const loadTrackSourceWithFallback = async (
   shouldContinue: () => boolean,
   retryOnAnyFailure = false,
   initialResolved?: ResolvedTrackSource | null,
+  preparedId?: string,
 ): Promise<LoadSourceResult> => {
   const retry = createSourceRetryState();
   let firstTry = initialResolved ?? null;
@@ -260,6 +269,7 @@ const loadTrackSourceWithFallback = async (
     if (!shouldContinue()) return { status: "cancelled" };
     if (!resolved) return { status: "unresolved" };
     const result = await load(resolved.source, autoPlay, track, {
+      preparedId: usingInitial ? preparedId : undefined,
       suppressErrorToast: usingInitial || shouldSuppressLoadError(resolved),
       context,
     });
@@ -269,7 +279,7 @@ const loadTrackSourceWithFallback = async (
       usingInitial &&
       !result.ok &&
       resolved.provider !== "local" &&
-      resolved.provider !== "cache"
+      (resolved.provider !== "cache" || Boolean(result.error && isSkippableError(result.error)))
     ) {
       continue;
     }
@@ -313,7 +323,8 @@ const loadTrack = async (
   media.setPlaybackContext(context);
   lyricLoader.beginLoad();
   resetForLoad(track.duration ?? 0);
-  void window.api.player.stop();
+  // 已准备的槽位由原生 load 接管；提前 stop 会连同备用槽一起释放
+  if (!preloaded?.preparedId) void window.api.player.stop();
   // 是否可跳曲
   let shouldSkip = false;
   try {
@@ -324,6 +335,7 @@ const loadTrack = async (
       () => myToken === trackToken,
       false,
       preloaded?.source,
+      preloaded?.preparedId,
     );
     if (loaded.status === "cancelled") return;
     if (loaded.status === "unresolved") {
@@ -497,6 +509,7 @@ export const pause = async (): Promise<void> => {
 
 /** 停止播放并重置进度 */
 export const stop = async (): Promise<void> => {
+  invalidateNextTrackPreload();
   const status = useStatusStore();
   status.trackLoading = false;
   const result = await window.api.player.stop();
@@ -723,7 +736,7 @@ const resumeAfterTagWrite = async (
 };
 
 /**
- * 写入本地文件标签并同步各处缓存。
+ * 写入本地文件标签并同步各处缓存
  * 目标包含当前播放曲时：记录进度 → 停止释放文件句柄 → 写入 → 重载并恢复进度
  * @param edits - 标签编辑请求（按文件路径）
  * @returns 逐项写入结果；IPC 层失败时返回 null
@@ -873,6 +886,7 @@ export const prevTrack = async (): Promise<void> => {
 
 /** 队列播放结束，通知主进程停止并更新状态 */
 const onQueueEnded = async (): Promise<void> => {
+  invalidateNextTrackPreload();
   const status = useStatusStore();
   status.trackLoading = false;
   playback.setPlaying(false);

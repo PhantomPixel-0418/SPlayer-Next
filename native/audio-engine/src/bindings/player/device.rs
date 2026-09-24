@@ -23,7 +23,7 @@ impl AudioPlayer {
     /// 重新初始化音频输出设备（系统休眠唤醒、设备热插拔或输出流错误后调用）
     ///
     /// 恢复为全成全败：新输出创建失败时不启动解码、不提交状态，保留当前曲目与位置，
-    /// 播放器进入暂停态并返回设备错误；在线音源不会因设备错误触发 URL 重取或 sourceError。
+    /// 播放器进入暂停态并返回设备错误；在线音源不会因设备错误触发 URL 重取或 sourceError
     #[napi]
     pub async fn reinit_output(&self) -> Result<()> {
         info!("重新初始化音频输出设备");
@@ -181,7 +181,7 @@ impl AudioPlayer {
                     }
                     if let Some(src) = source {
                         let is_remote = src.starts_with("http://") || src.starts_with("https://");
-                        if let Err(e) = self.load(src, Some(was_playing)).await {
+                        if let Err(e) = self.load(src, Some(was_playing), None).await {
                             if is_cancelled_napi_error(&e) {
                                 return Ok(());
                             }
@@ -214,7 +214,7 @@ impl AudioPlayer {
         // 没有 decoder_thread（例如上次 reinit 失败），但存在待恢复的曲目，走重新加载
         if let Some(src) = fallback_source {
             let is_remote = src.starts_with("http://") || src.starts_with("https://");
-            if let Err(e) = self.load(src, Some(was_playing_fallback)).await {
+            if let Err(e) = self.load(src, Some(was_playing_fallback), None).await {
                 if is_cancelled_napi_error(&e) {
                     return Ok(());
                 }

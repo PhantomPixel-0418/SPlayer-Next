@@ -12,6 +12,8 @@ pub struct JsExternalLyric {
 /// 歌曲完整元信息，返回给 JS 侧（load 时一次性返回）
 #[napi(object)]
 pub struct JsMusicMetadata {
+    /// 复用了预载 PCM 时的起点（秒），普通加载为空
+    pub prepared_position: Option<f64>,
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,

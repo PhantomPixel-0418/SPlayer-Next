@@ -11,8 +11,8 @@ use crate::dsp::fft::FftAnalyzer;
 use crate::error::{AudioErrorKind, AudioResultExt};
 use crate::output::{AudioOutput, OutputStream};
 
-/// 平台统一的播放控制句柄：持有一条独立输出流（cpal 共享流或 WASAPI 独占流）。
-/// 每次加载/seek 由 `attach` 创建，播放期间音量与停止通过原子标志与实时回调通信。
+/// 平台统一的播放控制句柄：持有一条独立输出流（cpal 共享流或 WASAPI 独占流）
+/// 每次加载/seek 由 `attach` 创建，播放期间音量与停止通过原子标志与实时回调通信
 pub struct PlaybackHandle {
     stream: OutputStream,
     volume: Arc<AtomicU32>,
@@ -20,12 +20,27 @@ pub struct PlaybackHandle {
 }
 
 impl PlaybackHandle {
-    /// 在启动解码前以暂停状态打开输出，确保独占回退后的格式用于重采样。
+    /// 在启动解码前以暂停状态打开输出，确保独占回退后的格式用于重采样
     pub fn prepare(
-        mut output: AudioOutput,
+        output: AudioOutput,
         fft: Arc<FftAnalyzer>,
     ) -> Result<(AudioOutput, Arc<Shared>, Arc<Self>)> {
-        let shared = Shared::new(output.sample_rate(), output.channels());
+        Self::prepare_with_buffer(output, fft, None)
+    }
+
+    /// 复用预载 PCM；设备协商格式不一致时使用新的缓冲区
+    pub fn prepare_with_buffer(
+        mut output: AudioOutput,
+        fft: Arc<FftAnalyzer>,
+        prepared: Option<Arc<Shared>>,
+    ) -> Result<(AudioOutput, Arc<Shared>, Arc<Self>)> {
+        let shared = prepared
+            .filter(|shared| {
+                shared.sample_rate() == output.sample_rate()
+                    && shared.channels() == output.channels()
+            })
+            .unwrap_or_else(|| Shared::new(output.sample_rate(), output.channels()));
+
         let source = DecoderSource::new(Arc::clone(&shared), Arc::clone(&fft));
         match Self::attach(&output, source, 1.0, true) {
             Ok(playback) => Ok((output, shared, Arc::new(playback))),
@@ -42,7 +57,7 @@ impl PlaybackHandle {
         }
     }
 
-    /// 提交已准备的输出流，在代次校验后才允许开始消费音频样本。
+    /// 提交已准备的输出流，在代次校验后才允许开始消费音频样本
     pub fn activate(&self, volume: f32, paused: bool) -> Result<()> {
         self.set_volume(volume);
         if !paused {
@@ -54,8 +69,8 @@ impl PlaybackHandle {
         Ok(())
     }
 
-    /// 按 `output` 的配置创建输出流并接入 `source`。
-    /// 传入 `volume` 为初始音量，`paused` 为 true 时保持暂停（恢复时由 `play` 启动）。
+    /// 按 `output` 的配置创建输出流并接入 `source`
+    /// 传入 `volume` 为初始音量，`paused` 为 true 时保持暂停（恢复时由 `play` 启动）
     pub fn attach(
         output: &AudioOutput,
         source: DecoderSource,

@@ -173,11 +173,13 @@ export interface LoadResult {
 
 /** player:load 的可选参数 */
 export interface LoadOptions {
+  /** 待消费的原生预载槽位代次 */
+  preparedId?: string;
   /** 是否自动播放，默认 true */
   autoPlay?: boolean;
   /**
-   * 渲染层下发的权威 Track 元数据，用于 SMTC/托盘/窗口标题。
-   * streaming/online 源应当下发；本地源缺省时主进程回退到引擎解析的 tag。
+   * 渲染层下发的权威 Track 元数据，用于 SMTC/托盘/窗口标题
+   * streaming/online 源应当下发；本地源缺省时主进程回退到引擎解析的 tag
    */
   meta?: Track;
   /** 本次播放的来源上下文 */
@@ -270,7 +272,20 @@ export interface AudioStreamInfo {
 
 /** 播放器 API */
 export interface PlayerApi {
-  /** 加载音频（本地路径或网络地址）。可选下发权威 meta 用于 SMTC/托盘 */
+  /**
+   * 在原生备用槽位中准备本地音源，不影响当前播放
+   * @param id - 预载任务标识，用于取消或在加载时消费该槽位
+   * @param source - 本地音频文件或已完成下载的缓存文件路径
+   * @param startMs - 预载起点，单位为毫秒，默认为 0
+   * @returns 预载就绪时返回 true，任务被取消或取代时返回 false
+   */
+  prepareNext(id: string, source: string, startMs?: number): Promise<boolean>;
+  /**
+   * 取消指定预载任务并释放缓存租约，不影响其他代次的任务
+   * @param id - 要取消的预载任务标识
+   */
+  cancelPrepared(id: string): Promise<void>;
+  /** 加载音频（本地路径或网络地址）；可选下发权威 meta 用于 SMTC/托盘 */
   load: (source: string, options?: LoadOptions) => Promise<IpcResponse<LoadResult>>;
   /** 恢复播放 */
   play: () => Promise<IpcResponse>;

@@ -226,7 +226,13 @@ export interface ResolvedTrackSource {
   fromCache: boolean;
   provider: "local" | "cache" | "streaming" | "official" | "plugin" | "trial";
   pluginId?: string;
-  cacheRequest?: () => Promise<void>;
+  /**
+   * 下载音源并返回可供原生预载使用的缓存路径
+   * @param preloadId - 可选的预载消费者标识，用于缓存租约和独立取消
+   * @param signal - 在解析下载地址期间取消任务的信号
+   * @returns 缓存路径，未完成下载或已取消时返回 null
+   */
+  cacheRequest?: (preloadId?: string, signal?: AbortSignal) => Promise<string | null>;
 }
 
 /**
@@ -239,8 +245,10 @@ const reportLoadError = (err: ErrorCode | string, silent?: boolean): void => {
 };
 
 /**
- * 根据 track 信息解析出最终的音频源 URL
- * @param track - 要解析的 track
+ * 解析歌曲的可播放音源及缓存下载入口
+ * @param track - 要解析的歌曲
+ * @param options - 错误提示、流媒体会话及在线来源重试选项
+ * @returns 本地路径或远端地址及缓存入口，无法解析时返回 null
  */
 export const resolveTrackSource = async (
   track: Track,
@@ -276,14 +284,16 @@ export const resolveTrackSource = async (
       };
       if (cacheEnabled && settings.system.cache.songCache.cacheStreaming) {
         // 缓存下载用独立 PlaySessionId
-        result.cacheRequest = async () => {
+        result.cacheRequest = async (preloadId, signal) => {
           try {
             const cacheUrl = await store.getStreamUrl(track, {
               playSessionId: crypto.randomUUID(),
             });
-            void window.api.cache.song.fetch(cacheKey, "streaming", cacheUrl);
+            if (signal?.aborted) return null;
+            return await window.api.cache.song.fetch(cacheKey, "streaming", cacheUrl, preloadId);
           } catch (err) {
             console.warn("[cache] streaming getStreamUrl failed", err);
+            return null;
           }
         };
       }
@@ -309,8 +319,9 @@ export const resolveTrackSource = async (
         pluginId: resolved.pluginId,
       };
       if (cacheEnabled && !resolved.isTrial) {
-        result.cacheRequest = async () => {
-          void window.api.cache.song.fetch(cacheKey, track.source, url);
+        result.cacheRequest = async (preloadId, signal) => {
+          if (signal?.aborted) return null;
+          return window.api.cache.song.fetch(cacheKey, track.source, url, preloadId);
         };
       }
       return result;

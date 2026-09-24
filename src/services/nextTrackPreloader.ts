@@ -17,11 +17,15 @@ import * as queue from "@/stores/queue";
 /** 预载结果 */
 export interface NextTrackPreloadResult {
   trackId: string;
+  /** 已就绪的原生槽位标识，缺省表示仅解析或缓存了音源 */
+  preparedId?: string;
   source: ResolvedTrackSource | null;
   contextKey: string;
 }
 
 let currentToken = 0;
+let nativePreloadId: string | null = null;
+let preloadAbort: AbortController | null = null;
 let cachedResult: NextTrackPreloadResult | null = null;
 let currentContextKey: string | null = null;
 let pendingCover: HTMLImageElement | null = null;
@@ -29,6 +33,8 @@ let stopContextWatch: (() => void) | null = null;
 
 /**
  * 拼装上下文指纹，用于去重与作废
+ * @param track - 下一曲候选及其本地文件或 CUE 信息
+ * @returns 包含音源、音质和解析环境的上下文指纹
  */
 const buildContextKey = (track: Track): string => {
   const settings = useSettingsStore();
@@ -42,6 +48,8 @@ const buildContextKey = (track: Track): string => {
     track.originalId ?? "",
     track.path ?? "",
     track.cueAudioPath ?? "",
+    track.cueStartMs ?? "",
+    track.cueEndMs ?? "",
     settings.player.songLevel,
     settings.player.allowTrialPlay,
     streaming.activeServerId ?? "",
@@ -62,6 +70,7 @@ const buildContextKey = (track: Track): string => {
 
 /**
  * 提前解码封面图片，仅利用 Chromium 渲染引擎缓存
+ * @param url - 要预载的封面地址
  */
 const preloadCover = async (url: string): Promise<void> => {
   if (!url) return;
@@ -84,6 +93,10 @@ const preloadCover = async (url: string): Promise<void> => {
  */
 export const invalidateNextTrackPreload = (): void => {
   currentToken++;
+  preloadAbort?.abort();
+  preloadAbort = null;
+  if (nativePreloadId) void window.api.player.cancelPrepared(nativePreloadId).catch(console.warn);
+  nativePreloadId = null;
   cachedResult = null;
   currentContextKey = null;
   if (pendingCover) {
@@ -105,13 +118,7 @@ export const consumePreloadedTrack = (track: Track): NextTrackPreloadResult | nu
   }
   const currentKey = buildContextKey(track);
   if (!cachedResult) {
-    if (currentContextKey === currentKey) {
-      // 音源尚未解析完成，阻止迟到结果写回；同曲歌词和封面仍可继续使用
-      currentToken++;
-      currentContextKey = null;
-    } else if (currentContextKey) {
-      invalidateNextTrackPreload();
-    }
+    invalidateNextTrackPreload();
     return null;
   }
   if (cachedResult.trackId !== track.id) {
@@ -124,6 +131,8 @@ export const consumePreloadedTrack = (track: Track): NextTrackPreloadResult | nu
     return null;
   }
   const result = cachedResult;
+  nativePreloadId = null;
+  preloadAbort = null;
   currentToken++;
   cachedResult = null;
   currentContextKey = null;
@@ -135,12 +144,21 @@ export const consumePreloadedTrack = (track: Track): NextTrackPreloadResult | nu
  */
 export const scheduleNextTrackPreload = (): void => {
   const settings = useSettingsStore();
-  if (!settings.player.preloadNextTrack) {
+  if (
+    !settings.player.preloadNextTrack ||
+    !settings.system.cache.songCache.enabled ||
+    !settings.system.cache.songCache.cacheStreaming
+  ) {
     invalidateNextTrackPreload();
     return;
   }
 
   const status = useStatusStore();
+  if (status.state === "stopped" || status.state === "idle") {
+    invalidateNextTrackPreload();
+    return;
+  }
+  if (status.state === "loading") return;
   const currentTrack = status.currentTrack;
   if (!currentTrack || useMediaStore().track?.id !== currentTrack.id) {
     invalidateNextTrackPreload();
@@ -162,20 +180,25 @@ export const scheduleNextTrackPreload = (): void => {
 
   const candidateTrack = candidateResult.track;
   const contextKey = buildContextKey(candidateTrack);
-  // 歌词使用独立上下文去重，歌词偏好变化不需要重新解析音源
-  preloadLyricForTrack(candidateTrack);
-
   // 上下文指纹一致且已有缓存，避免重复触发
   if (cachedResult && cachedResult.contextKey === contextKey) {
+    preloadLyricForTrack(candidateTrack);
     return;
   }
 
   // 避免在异步生成过程中重复调度同一 contextKey
   if (currentContextKey === contextKey && !cachedResult) {
+    preloadLyricForTrack(candidateTrack);
     return;
   }
 
+  invalidateNextTrackPreload();
+  preloadLyricForTrack(candidateTrack);
   const token = ++currentToken;
+  const id = crypto.randomUUID();
+  const abort = new AbortController();
+  preloadAbort = abort;
+  nativePreloadId = id;
   currentContextKey = contextKey;
   cachedResult = null;
 
@@ -185,16 +208,36 @@ export const scheduleNextTrackPreload = (): void => {
         void preloadCover(candidateTrack.cover);
       }
       // 音源预拉取
-      const source = await resolveTrackSource(candidateTrack, {
+      let source = await resolveTrackSource(candidateTrack, {
         silent: true,
         streamingPlaySessionId: crypto.randomUUID(),
       });
       if (token !== currentToken) return;
-      cachedResult = {
-        trackId: candidateTrack.id,
-        source,
-        contextKey,
-      };
+      if (!source) {
+        invalidateNextTrackPreload();
+        return;
+      }
+      if (source.cacheRequest) {
+        const cachedPath = await source.cacheRequest(id, abort.signal);
+        if (token !== currentToken) return;
+        if (cachedPath) source = { source: cachedPath, fromCache: true, provider: "cache" };
+      }
+      let preparedId: string | undefined;
+      if (source.provider === "local" || source.fromCache) {
+        const ready = await window.api.player.prepareNext(
+          id,
+          source.source,
+          candidateTrack.cueStartMs,
+        );
+        if (token !== currentToken) return;
+        if (ready) preparedId = id;
+      }
+      if (!preparedId) {
+        await window.api.player.cancelPrepared(id);
+        if (token !== currentToken) return;
+        nativePreloadId = null;
+      }
+      cachedResult = { trackId: candidateTrack.id, source, contextKey, preparedId };
     } catch (err) {
       console.warn("[nextPreload] Preload task failed silently:", err);
       if (token === currentToken) {
@@ -214,11 +257,16 @@ export const installNextTrackPreloadWatchers = (): void => {
   stopContextWatch = watch(
     () => [
       settings.player.preloadNextTrack,
+      settings.system.cache.songCache.enabled,
+      settings.system.cache.songCache.cacheStreaming,
       settings.player.songLevel,
       settings.player.allowTrialPlay,
       status.playIndex,
+      status.state,
       status.fmMode,
       status.shuffleMode,
+      settings.preset.skipKeywordsSongs,
+      settings.preset.skipTrackKeywords.join(","),
       queue.queue.value,
       streaming.activeServerId,
       settings.lyric.lyricSourcePreference,

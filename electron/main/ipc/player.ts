@@ -1,3 +1,4 @@
+import { prepareNextTrack, cancelPreparedTrack } from "@main/services/playerPreload";
 import { extname } from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
 import { sendToMain } from "@main/utils/broadcast";
@@ -221,6 +222,10 @@ let loadSeq = 0;
 
 /** 播放器相关 IPC */
 export const registerPlayerIpc = (): void => {
+  ipcMain.handle("player:prepareNext", (_event, id: string, source: string, startMs?: number) =>
+    prepareNextTrack(id, source, startMs),
+  );
+  ipcMain.handle("player:cancelPrepared", (_event, id: string) => cancelPreparedTrack(id));
   // 注册实例创建/重建时的回调
   onPlayerCreated(registerNativeEvents);
   onPlayerCreated(startDeviceMonitoring);
@@ -242,6 +247,7 @@ export const registerPlayerIpc = (): void => {
     // 非本地音源
     const isRemote = authoritative != null && authoritative.source !== "local";
     const seq = ++loadSeq;
+    if (!options.preparedId) cancelPreparedTrack();
     try {
       const inst = getPlayer();
       const loadingEvent = {
@@ -303,9 +309,14 @@ export const registerPlayerIpc = (): void => {
       } else {
         applyDisplay(source.split(/[/\\]/).pop() || source, [], "", undefined, 0);
       }
-      const meta = await inst.load(source, cueRange ? false : autoPlay);
+      const meta = await inst
+        .load(source, cueRange ? false : autoPlay, options.preparedId)
+        .finally(() => {
+          if (options.preparedId) cancelPreparedTrack(options.preparedId);
+        });
       if (cueRange) {
-        await inst.seek(cueRange.startMs / 1000);
+        if (meta.preparedPosition !== cueRange.startMs / 1000)
+          await inst.seek(cueRange.startMs / 1000);
         if (autoPlay) await inst.play();
       }
       const nativeDurationMs = toMs(meta.duration);
@@ -376,8 +387,15 @@ export const registerPlayerIpc = (): void => {
       if (seq === loadSeq) activeCueRange = null;
       const code = classifyLoadError(error, source);
       // 解码失败的源指向歌曲缓存目录 → 文件已损坏，把这条缓存项作废
-      if (code === ErrorCode.FILE_DECODE_ERROR && source.startsWith(getSongCacheDir())) {
-        void songCache.invalidate(source);
+      if (
+        [
+          ErrorCode.FILE_DECODE_ERROR,
+          ErrorCode.FILE_NOT_FOUND,
+          ErrorCode.FILE_NO_AUDIO_STREAM,
+        ].includes(code) &&
+        source.startsWith(getSongCacheDir())
+      ) {
+        await songCache.invalidate(source);
       }
       return fail(code, error);
     }
@@ -406,6 +424,7 @@ export const registerPlayerIpc = (): void => {
   // 停止播放并释放资源
   ipcMain.handle("player:stop", () => {
     try {
+      cancelPreparedTrack();
       cancelPendingReinit();
       activeCueRange = null;
       getPlayer().stop();

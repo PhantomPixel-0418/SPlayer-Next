@@ -1,0 +1,58 @@
+import { getPlayer, onPlayerReset } from "@main/services/engine";
+import * as songCache from "@main/services/songCache";
+import { store } from "@main/store";
+
+let prepared: { id: string; player: ReturnType<typeof getPlayer> } | null = null;
+
+/**
+ * 取消下一曲准备任务并释放对应的缓存租约
+ * @param id - 预载任务标识，省略时取消当前备用槽位
+ */
+export const cancelPreparedTrack = (id = prepared?.id): void => {
+  if (!id) return;
+  const current = prepared?.id === id ? prepared : null;
+  if (current) prepared = null;
+  try {
+    current?.player.cancelPrepared(id);
+  } finally {
+    songCache.cancelPreload(id);
+  }
+};
+
+onPlayerReset(cancelPreparedTrack);
+
+/**
+ * 将缓存完成的音源交给原生备用槽位解码
+ * @param id - 用于取消和消费预载资源的任务标识
+ * @param source - 本地音频文件或已完成下载的缓存文件路径
+ * @param startMs - 预载起点，单位为毫秒，CUE 子曲目使用对应的起始位置
+ * @returns 当前任务仍有效且音频已准备就绪时返回 true，否则返回 false
+ */
+export const prepareNextTrack = async (
+  id: string,
+  source: string,
+  startMs = 0,
+): Promise<boolean> => {
+  cancelPreparedTrack();
+  if (!store.get("cache.songCache.enabled")) {
+    songCache.cancelPreload(id);
+    return false;
+  }
+  const player = getPlayer();
+  prepared = { id, player };
+  songCache.pinPreload(id, source);
+  try {
+    const ready = await player.prepareNext(id, source, startMs / 1000);
+    if (!ready || prepared?.id !== id) {
+      player.cancelPrepared(id);
+      cancelPreparedTrack(id);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    const current = prepared?.id === id;
+    cancelPreparedTrack(id);
+    if (current) await songCache.invalidate(source);
+    throw error;
+  }
+};

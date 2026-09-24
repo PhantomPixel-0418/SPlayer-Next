@@ -67,6 +67,7 @@ pub struct SeekTake {
 
 /// 完成音源准备后一次性提交给播放器的资源
 pub struct LoadedPlayback {
+    pub start_position: f64,
     pub metadata: AudioMetadata,
     pub decode_handle: JoinHandle<decoder::DecoderData>,
     pub shared: Arc<Shared>,
@@ -213,7 +214,7 @@ impl InnerPlayer {
 
     /// seek 三段式的最后一段：主线程持锁，attach 新 sink + 新解码线程
     ///
-    /// `output` 为输出重建（`reinit_output`）时新建的输出，seek 本身传 `None` 沿用现有输出。
+    /// `output` 为输出重建（`reinit_output`）时新建的输出，seek 本身传 `None` 沿用现有输出
     /// 返回 false 表示本次 seek 已被更新的 load/seek/stop 取代，结果被丢弃
     pub fn commit_seeked(
         &mut self,
@@ -264,7 +265,7 @@ impl InnerPlayer {
 
     /// load 的下半部分：NAPI 绑定层完成异步 IO 后由主线程持锁调用
     ///
-    /// `token` 为 take_for_async_load 时拿到的标识。本函数比对当前最新 token：
+    /// `token` 为 take_for_async_load 时拿到的标识；本函数比对当前最新 token：
     /// - 不一致 → 本次 load 已被更新的 load 抢占，丢弃 sink/shared，stop 解码线程后返回 None
     /// - 一致 → 正常 attach 新资源
     pub fn commit_loaded(
@@ -275,6 +276,7 @@ impl InnerPlayer {
         loaded: LoadedPlayback,
     ) -> Result<Option<AudioMetadata>> {
         let LoadedPlayback {
+            start_position,
             mut metadata,
             decode_handle,
             shared,
@@ -295,6 +297,7 @@ impl InnerPlayer {
             return Ok(None);
         }
 
+        shared.set_normalization_enabled(self.normalization_enabled);
         if let Err(error) = playback.activate(self.target_volume, !auto_play) {
             if let Some(handle) = cancel {
                 handle.cancel();
@@ -308,7 +311,7 @@ impl InnerPlayer {
         self.playback = Some(playback);
         self.shared = Some(shared);
         self.decoder_thread = Some(decode_handle);
-        self.seek_base = 0.0;
+        self.seek_base = start_position;
         self.current_source = Some(source.to_string());
 
         self.audio_duration = metadata.duration_secs;
