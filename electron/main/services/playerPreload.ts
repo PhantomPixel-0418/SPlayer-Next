@@ -1,4 +1,4 @@
-import { getPlayer } from "@main/services/engine";
+import { getPlayer, onPlayerReset } from "@main/services/engine";
 import * as songCache from "@main/services/songCache";
 import { store } from "@main/store";
 
@@ -10,12 +10,16 @@ let prepared: { id: string; player: ReturnType<typeof getPlayer> } | null = null
  */
 export const cancelPreparedTrack = (id = prepared?.id): void => {
   if (!id) return;
-  if (prepared?.id === id) {
-    prepared.player.cancelPrepared(id);
-    prepared = null;
+  const current = prepared?.id === id ? prepared : null;
+  if (current) prepared = null;
+  try {
+    current?.player.cancelPrepared(id);
+  } finally {
+    songCache.cancelPreload(id);
   }
-  songCache.cancelPreload(id);
 };
+
+onPlayerReset(cancelPreparedTrack);
 
 /**
  * 将缓存完成的音源交给原生备用槽位解码

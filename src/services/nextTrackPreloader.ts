@@ -154,6 +154,11 @@ export const scheduleNextTrackPreload = (): void => {
   }
 
   const status = useStatusStore();
+  if (status.state === "stopped" || status.state === "idle") {
+    invalidateNextTrackPreload();
+    return;
+  }
+  if (status.state === "loading") return;
   const currentTrack = status.currentTrack;
   if (!currentTrack || useMediaStore().track?.id !== currentTrack.id) {
     invalidateNextTrackPreload();
@@ -208,7 +213,10 @@ export const scheduleNextTrackPreload = (): void => {
         streamingPlaySessionId: crypto.randomUUID(),
       });
       if (token !== currentToken) return;
-      if (!source) return;
+      if (!source) {
+        invalidateNextTrackPreload();
+        return;
+      }
       if (source.cacheRequest) {
         const cachedPath = await source.cacheRequest(id, abort.signal);
         if (token !== currentToken) return;
@@ -254,6 +262,7 @@ export const installNextTrackPreloadWatchers = (): void => {
       settings.player.songLevel,
       settings.player.allowTrialPlay,
       status.playIndex,
+      status.state,
       status.fmMode,
       status.shuffleMode,
       settings.preset.skipKeywordsSongs,

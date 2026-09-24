@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     resolve: vi.fn(),
     load: vi.fn(),
     stop: vi.fn(),
+    invalidate: vi.fn(),
   };
 });
 vi.mock("./events", () => ({ handleEvent: vi.fn() }));
@@ -46,6 +47,7 @@ vi.mock("@/stores/history", () => ({ useHistoryStore: () => ({ record: vi.fn() }
 vi.mock("@/stores/library", () => ({ useLibraryStore: vi.fn() }));
 vi.mock("@/stores/queue", () => ({ setQueue: vi.fn(), updateQueueTracks: vi.fn() }));
 vi.mock("@/services/playback", () => ({
+  reset: vi.fn(),
   setCurrentTime: vi.fn(),
   setDuration: vi.fn(),
   setPlaying: vi.fn(),
@@ -58,6 +60,7 @@ vi.mock("@/services/cacheScheduler", () => ({ cancel: vi.fn(), schedule: vi.fn()
 vi.mock("@/services/deviceVolume", () => ({ getDeviceVolume: vi.fn(), setDeviceVolume: vi.fn() }));
 vi.mock("@/services/audioSource", () => ({ resolveTrackSource: mocks.resolve }));
 vi.mock("@/services/nextTrackPreloader", () => ({
+  invalidateNextTrackPreload: mocks.invalidate,
   consumePreloadedTrack: mocks.consume,
   disposeNextTrackPreload: vi.fn(),
   installNextTrackPreloadWatchers: vi.fn(),
@@ -84,6 +87,21 @@ describe("切歌消费真实预载", () => {
     });
     mocks.stop.mockResolvedValue({ success: true });
     Object.assign(window, { api: { player: { load: mocks.load, stop: mocks.stop } } });
+  });
+
+  it("主动停止在等待主进程响应前就作废预载", async () => {
+    let finish!: (result: { success: boolean }) => void;
+    mocks.stop.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { stop } = await import("./index");
+    const pending = stop();
+    expect(mocks.invalidate).toHaveBeenCalledOnce();
+    finish({ success: true });
+    await pending;
   });
 
   it("准备完成的槽位直接交给 load，不能先 stop 清除它", async () => {
