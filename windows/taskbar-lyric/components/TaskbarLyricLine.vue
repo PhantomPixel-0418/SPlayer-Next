@@ -9,8 +9,10 @@ const props = withDefaults(
     text?: string;
     wordByWord?: boolean;
     anchor?: "left" | "right";
+    /** 溢出滚动时进度点在容器中的水平比例 */
+    centerRatio?: number;
   }>(),
-  { wordByWord: false, anchor: "left" },
+  { wordByWord: false, anchor: "left", centerRatio: 0.5 },
 );
 
 const useKaraoke = computed(() => props.wordByWord && !!props.line);
@@ -134,7 +136,7 @@ const computeProgressX = (line: LyricLine, currentMs: number): number => {
 
 /**
  * 计算横向滚动平移量
- * 溢出时进度点固定在容器中心，clamp 保证开头贴左边缘、结尾贴右边缘
+ * 溢出时进度点固定在容器指定比例处，clamp 保证开头贴左边缘、结尾贴右边缘
  * @returns 应用到 scroll-content 的 transform 字符串
  */
 const getScrollTransform = (currentMs: number): string => {
@@ -148,7 +150,9 @@ const getScrollTransform = (currentMs: number): string => {
   const textW = getContentWidth();
   const progressX = computeProgressX(line, currentMs);
   if (!Number.isFinite(progressX)) return lastTransform || "translateX(0)";
-  const ideal = containerW / 2 - progressX;
+  // 进度点位置比例，clamp 到 [0.1, 0.9] 防止极端值导致布局不可用
+  const ratio = Math.min(0.9, Math.max(0.1, props.centerRatio));
+  const ideal = containerW * ratio - progressX;
   const clamped = Math.min(0, Math.max(containerW - textW, ideal));
   return `translateX(${clamped.toFixed(3)}px)`;
 };

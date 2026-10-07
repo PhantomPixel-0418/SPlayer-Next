@@ -27,6 +27,7 @@ const config = reactive<TaskbarLyricSettings>({
   fontSize: 14,
   fontWeight: 400,
   fontFamily: "",
+  progressPoint: 0.5,
 });
 
 const anchor = ref<"left" | "right">("left");
@@ -296,6 +297,7 @@ onBeforeUnmount(() => {
               :text="item.text"
               :word-by-word="config.wordByWord && !!item.line"
               :anchor="anchor"
+              :center-ratio="config.progressPoint"
             />
           </div>
         </TransitionGroup>
