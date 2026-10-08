@@ -1,7 +1,12 @@
 <script setup lang="ts">
+/**
+ * 任务栏歌词行的逐词高亮与溢出滚动
+ * 翻译副行按原文相同的溢出滚动比例同步滚动，不溢出时保持不动
+ */
 import type { LyricLine } from "@shared/types/lyrics";
 import { getWordSweepProgress } from "lyric-kit";
 import { getNowPlayingCurrentMs } from "@windows/shared/composables/useNowPlayingSync";
+import { getPrimaryScrollRatio, setPrimaryScrollRatio } from "./scrollSync";
 
 const props = withDefaults(
   defineProps<{
@@ -11,8 +16,18 @@ const props = withDefaults(
     anchor?: "left" | "right";
     /** 溢出滚动时进度点在容器中的水平比例 */
     centerRatio?: number;
+    /** 是否为翻译副行，跟随原文滚动比例 */
+    followPrimary?: boolean;
+    /** 是否为当前原文主行，负责发布滚动比例 */
+    isPrimary?: boolean;
   }>(),
-  { wordByWord: false, anchor: "left", centerRatio: 0.5 },
+  {
+    wordByWord: false,
+    anchor: "left",
+    centerRatio: 0.5,
+    followPrimary: false,
+    isPrimary: false,
+  },
 );
 
 const useKaraoke = computed(() => props.wordByWord && !!props.line);
@@ -33,6 +48,7 @@ const wordWidthCache = new Map<LyricLine, number[]>();
 let resizeObserver: ResizeObserver | null = null;
 let rafId = 0;
 let lastTransform = "";
+let lastRatio = 0;
 let lastWordProgress: string[] = [];
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -134,27 +150,41 @@ const computeProgressX = (line: LyricLine, currentMs: number): number => {
   return clamp01((currentMs - startTime) / (endTime - startTime)) * getContentWidth();
 };
 
+type ScrollResult = {
+  transform: string;
+  ratio: number;
+};
+
 /**
- * 计算横向滚动平移量
- * 溢出时进度点固定在容器指定比例处，clamp 保证开头贴左边缘、结尾贴右边缘
- * @returns 应用到 scroll-content 的 transform 字符串
+ * 计算当前行的平移量与溢出滚动比例
+ * 主行按播放进度计算，翻译副行跟随主行比例，其他副行独立滚动
  */
-const getScrollTransform = (currentMs: number): string => {
-  if (overflowPxRef <= 0) return "translateX(0)";
+const computeScroll = (currentMs: number): ScrollResult => {
+  if (overflowPxRef <= 0) return { transform: "translateX(0)", ratio: 0 };
+  const containerW = containerWRef;
+  const textW = getContentWidth();
+
+  if (props.followPrimary) {
+    const ratio = getPrimaryScrollRatio();
+    const translateX = Math.min(0, Math.max(containerW - textW, -ratio * overflowPxRef));
+    return { transform: `translateX(${translateX.toFixed(3)}px)`, ratio };
+  }
+
   const line = props.line;
   if (!line || !line.words.length) {
     // 纯文本无时间轴，无进度可追踪
-    return "translateX(0)";
+    return { transform: "translateX(0)", ratio: 0 };
   }
-  const containerW = containerWRef;
-  const textW = getContentWidth();
   const progressX = computeProgressX(line, currentMs);
-  if (!Number.isFinite(progressX)) return lastTransform || "translateX(0)";
+  if (!Number.isFinite(progressX)) {
+    return { transform: lastTransform || "translateX(0)", ratio: lastRatio };
+  }
   // 进度点位置比例，clamp 到 [0.1, 0.9] 防止极端值导致布局不可用
   const ratio = Math.min(0.9, Math.max(0.1, props.centerRatio));
   const ideal = containerW * ratio - progressX;
-  const clamped = Math.min(0, Math.max(containerW - textW, ideal));
-  return `translateX(${clamped.toFixed(3)}px)`;
+  const translateX = Math.min(0, Math.max(containerW - textW, ideal));
+  const scrollRatio = Math.min(1, Math.max(0, -translateX / overflowPxRef));
+  return { transform: `translateX(${translateX.toFixed(3)}px)`, ratio: scrollRatio };
 };
 
 /** 逐词染色进度，驱动渐变色位置 */
@@ -186,6 +216,7 @@ const setWordRef = (el: Element | { $el?: Element } | null, index: number): void
 
 const resetRenderCache = (): void => {
   lastTransform = "";
+  lastRatio = 0;
   lastWordProgress = [];
   wordRefs.length = 0;
 };
@@ -200,13 +231,17 @@ const scheduleWordWidthBuild = (): void => {
   });
 };
 
-/** 更新滚动 transform */
+/** 更新滚动 transform，并由主行发布当前滚动比例 */
 const renderScroll = (currentMs: number): void => {
   if (!contentRef.value) return;
-  const transform = getScrollTransform(currentMs);
-  if (transform !== lastTransform) {
-    lastTransform = transform;
-    contentRef.value.style.transform = transform;
+  const result = computeScroll(currentMs);
+  if (props.isPrimary) {
+    lastRatio = result.ratio;
+    setPrimaryScrollRatio(result.ratio);
+  }
+  if (result.transform !== lastTransform) {
+    lastTransform = result.transform;
+    contentRef.value.style.transform = result.transform;
   }
 };
 
@@ -242,6 +277,14 @@ watch(
     scheduleWordWidthBuild();
   },
 );
+// wordByWord 在同一行内切换时重建词宽，避免词级定位卡在行级兜底
+watch(
+  () => props.wordByWord,
+  () => {
+    wordWidthCache.clear();
+    scheduleWordWidthBuild();
+  },
+);
 watch(
   () => props.text,
   () => nextTick(measure),
@@ -260,6 +303,8 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(rafId);
     rafId = 0;
   }
+  // 主行卸除时清掉共享比例，避免窗口重开瞬间翻译行读到上一轮的陈旧值
+  if (props.isPrimary) setPrimaryScrollRatio(0);
   resizeObserver?.disconnect();
   resizeObserver = null;
 });
