@@ -6,7 +6,7 @@ const emit = defineEmits<{
   "active-change": [active: boolean];
 }>();
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const query = ref("");
 const isFocused = ref(false);
 
@@ -33,7 +33,10 @@ const results = computed<SearchResult[]>(() => {
         if (item.visible && !item.visible()) continue;
         if (item.searchable === false) continue;
         const label = t(`settings.${item.key}.label`);
-        const desc = item.hideDescription ? "" : t(`settings.${item.key}.description`);
+        const desc =
+          item.hideDescription || !te(`settings.${item.key}.description`)
+            ? ""
+            : t(`settings.${item.key}.description`);
         const kw = item.keywords?.map((k) => t(k)).join(" ") ?? "";
         if (`${label} ${desc} ${kw}`.toLowerCase().includes(q)) {
           out.push({
