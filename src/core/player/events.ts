@@ -1,3 +1,4 @@
+import { queueEntries } from "@/stores/queue";
 import type { PlayerEvent } from "@shared/types/player";
 import i18n from "@/i18n";
 import { toast } from "@/composables/useToast";
@@ -27,7 +28,7 @@ import {
   prevTrack,
   recoverFromSourceFailure,
   refreshDevices,
-  seek,
+  restartCurrentTrack,
   setRepeatMode,
   setShuffleMode,
   trySmartTransition,
@@ -49,10 +50,8 @@ const finishCurrentTrack = async (): Promise<void> => {
     playStats.onTrackEnded(repeatOne && !stopByTimer);
     // 定时关闭"等本曲结束"模式
     if (stopByTimer) return;
-    // 单曲循环：seek 回开头继续播放
     if (repeatOne) {
-      await seek(0);
-      await play();
+      await restartCurrentTrack();
     } else {
       await nextTrack();
     }
@@ -71,10 +70,15 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
     case "status":
       // 歌曲加载中或 loading 事件不更新 UI，保持当前封面/进度/播放状态平滑过渡
       if (event.data.state === "loading" || status.trackLoading) break;
-      status.state = event.data.state;
-      if (event.data.state === "idle" || event.data.state === "stopped") {
+      /** 失败路径已置为空闲时，迟到的停止通知不能取消待执行的自动跳曲 */
+      if (
+        (event.data.state === "idle" || event.data.state === "stopped") &&
+        status.state !== "idle" &&
+        status.state !== "stopped"
+      ) {
         invalidatePlaybackOperation();
       }
+      status.state = event.data.state;
       // seek 期间不从 status 事件更新 position，避免回跳；position 更新统一由 position 事件负责
       if (!isSeeking()) {
         status.position = playback.setCurrentTime(event.data.position);
@@ -147,6 +151,17 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
     case "play":
       await play();
       break;
+    case "getQueue": {
+      const { requestId, offset, limit } = event.data;
+      const entries = queueEntries.value;
+      window.api.player.respondQueue(requestId, {
+        tracks: entries.slice(offset, offset + limit).map((item) => toRaw(item.track)),
+        total: entries.length,
+        currentIndex: status.currentIndex,
+        offset,
+      });
+      break;
+    }
     case "playTrack":
       await playNow(event.data.track);
       break;

@@ -1,9 +1,4 @@
-/**
- * Netease API 请求层
- *
- * 核心职责：根据加密方式（weapi / linuxapi / eapi / api / xeapi）构造 URL、headers、form body，
- * 处理 cookie 合并、响应解密、状态码归一化
- */
+/** 按客户端协议装配请求并统一处理响应 */
 
 import { randomBytes } from "node:crypto";
 import {
@@ -23,9 +18,13 @@ import { getAnonymousToken, getDeviceId } from "./device";
 import { ensureXeapiKey, getXeapiSession, updateXeapiSession } from "./xeapi";
 import { getAntiCheatTokenV3 } from "./checktoken";
 import { fetchWithProxy } from "@main/utils/proxy";
+import { NeteaseRequestError, type RequestResponse } from "./response";
+import { requestWithWebClient } from "./webClient";
 
 /** 调用方传入的可选参数 */
 export interface RequestOptions {
+  /** 网页请求由公共层匹配 SDK 规则并复用会话 */
+  client?: "web";
   /** 加密方式；省略时依据路径默认规则，详见 createRequest */
   crypto?: CryptoMode | "";
   /** 预注入 cookie，可为字符串或对象 */
@@ -41,26 +40,6 @@ export interface RequestOptions {
   e_r?: boolean;
   /** 强制附加 anti-cheat token（如 "v3"） */
   checkToken?: string | boolean;
-}
-
-/** 响应统一结构 */
-export interface RequestResponse {
-  status: number;
-  body: Record<string, unknown>;
-  cookie: string[];
-}
-
-/** 非 200 响应抛出的错误 */
-export class NeteaseRequestError extends Error {
-  readonly response: RequestResponse;
-  constructor(response: RequestResponse) {
-    const body = response.body as { code?: number | string; msg?: string; message?: string };
-    const code = body?.code ?? response.status;
-    const msg = body?.msg ?? body?.message ?? "";
-    super(msg ? `netease ${code}: ${msg}` : `netease ${code}`);
-    this.name = "NeteaseRequestError";
-    this.response = response;
-  }
 }
 
 interface NeteaseBody {
@@ -119,7 +98,7 @@ const processCookieObject = (
     appver: cookie.appver || os.appver,
   };
 
-  // 服务端下发条件为不带 NMTID 请求任意 eapi 接口
+  /** 服务端下发条件为不带 NMTID 请求任意 eapi 接口 */
   if (cookie.NMTID) {
     processed.NMTID = cookie.NMTID;
   } else if (cachedNmtid) {
@@ -147,15 +126,17 @@ const chooseUserAgent = (
 
 /**
  * 构造并发送请求
- * @param uri   接口路径，例如 `/api/w/login`；weapi 会自动替换前缀为 `/weapi/`
- * @param data  业务参数（不含 cookie/csrf，请求层会自动注入）
- * @param options 加密方式 / cookie / 代理等
+ * @param uri - 接口路径，例如 `/api/w/login`；weapi 会自动替换前缀为 `/weapi/`
+ * @param data - 业务参数（不含 cookie/csrf，请求层会自动注入）
+ * @param options - 加密方式 / cookie / 代理等
+ * @returns 接口响应与会话 Cookie
  */
 export const createRequest = async (
   uri: string,
   data: Record<string, unknown>,
   options: RequestOptions,
 ): Promise<RequestResponse> => {
+  if (options.client === "web") return requestWithWebClient(uri, data, options);
   const headers: Record<string, string> = {};
   const ip = options.realIP || options.ip || "";
   if (ip) {
@@ -166,7 +147,7 @@ export const createRequest = async (
   let crypto: CryptoMode | "" = options.crypto ?? "";
   if (crypto === "") crypto = "eapi";
 
-  // 归一化 cookie 到对象并做一次补全
+  /** 归一化 cookie 到对象并做一次补全 */
   let cookie: Record<string, string> =
     typeof options.cookie === "string" ? cookieToJson(options.cookie) : options.cookie || {};
   cookie = processCookieObject(cookie, crypto);
@@ -184,6 +165,7 @@ export const createRequest = async (
   }
 
   let url = "";
+  let xeapiGeneration: number | undefined;
   let encryptData: Record<string, string | number | boolean> | typeof data;
 
   switch (crypto) {
@@ -209,6 +191,8 @@ export const createRequest = async (
       break;
     }
     case "xeapi": {
+      const session = getXeapiSession();
+      xeapiGeneration = session.generation;
       const publicKeyState = await ensureXeapiKey(cookie.deviceId);
       const xeapiOs = cookie.os === "android" ? cookie.os : "android";
       const xeapiAppver = cookie.os === "android" && cookie.appver ? cookie.appver : "9.1.65";
@@ -235,7 +219,6 @@ export const createRequest = async (
         buildver: xeapiBuildver,
         sDeviceId: cookie.sDeviceId || cookie.deviceId,
       });
-      const session = getXeapiSession();
       url = (options.domain || XEAPI_DOMAIN) + "/xeapi/" + uri.slice(5);
       encryptData = encrypt.xeapi(uri, data, {
         publicKeyState,
@@ -325,7 +308,7 @@ export const createRequest = async (
     throw new NeteaseRequestError(answer);
   }
 
-  // 收集 set-cookie 并提取服务端下发的 NMTID
+  /** 收集 set-cookie 并提取服务端下发的 NMTID */
   const setCookie =
     (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ??
     (res.headers.get("set-cookie") ? [res.headers.get("set-cookie") as string] : []);
@@ -342,11 +325,13 @@ export const createRequest = async (
     answer.cookie = setCookie.map(cleanCookie);
   }
 
-  // xeapi 会话密钥由响应头下发，缓存供后续请求复用
+  /** xeapi 会话密钥由响应头下发，缓存供后续请求复用 */
   if (isXeapi) {
     const ssid = res.headers.get("x-encr-ssid");
     const sskey = res.headers.get("x-encr-sskey");
-    if (ssid && sskey) updateXeapiSession(ssid, sskey);
+    if (ssid && sskey && xeapiGeneration !== undefined) {
+      updateXeapiSession(ssid, sskey, xeapiGeneration);
+    }
   }
 
   let parsed: NeteaseBody;
@@ -360,11 +345,10 @@ export const createRequest = async (
       ) as NeteaseBody;
     } else {
       const text = await res.text();
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = { code: res.status, raw: text };
-      }
+      parsed = JSON.parse(text);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("平台响应不是有效对象");
     }
     answer.body = parsed;
     if (parsed?.code !== undefined) parsed.code = Number(parsed.code);
@@ -373,8 +357,8 @@ export const createRequest = async (
       answer.status = 200;
     }
   } catch {
-    answer.body = { code: res.status, msg: "parse failed" };
-    answer.status = res.status;
+    answer.status = res.status >= 400 ? res.status : 502;
+    answer.body = { code: answer.status, msg: "平台响应解析失败" };
   }
 
   answer.status = answer.status > 100 && answer.status < 600 ? answer.status : 400;

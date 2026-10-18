@@ -1,7 +1,7 @@
 import type { Track, TrackSource } from "@shared/types/player";
 import type { Platform } from "@shared/types/platform";
 import type { QualityLevel } from "@/utils/quality";
-import { useStreamingStore } from "@/stores/streaming";
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useUserStore } from "@/stores/user";
@@ -20,6 +20,8 @@ const PLATFORM_TO_PLUGIN_SOURCE: Record<Platform, string> = {
 
 /** 解析选项 */
 export interface ResolveTrackSourceOptions {
+  /** 已下载文件加载失败时跳过，继续解析缓存或在线音源 */
+  skipDownloaded?: boolean;
   /** 将解析失败原因交给播放流程，供提示和跳曲决策使用 */
   onError?: (error: string) => void;
   /** 要跳过的插件 ID 列表 */
@@ -28,8 +30,6 @@ export interface ResolveTrackSourceOptions {
   skipOfficialOnline?: boolean;
   /** 是否静默解析 */
   silent?: boolean;
-  /** 流媒体 PlaySessionId，用于预载时隔离当前播放会话 */
-  streamingPlaySessionId?: string;
 }
 
 /**
@@ -48,7 +48,7 @@ const isOnlinePlatform = (source: TrackSource): source is Platform =>
  */
 const cacheKeyForTrack = (track: Track, songLevel: QualityLevel): string | null => {
   if (track.source === "streaming" && track.serverId && track.originalId) {
-    return `s:${track.serverId}:${track.originalId}:`;
+    return `s:${track.serverId}:${track.originalId}:${track.serverRevision ? `r${track.serverRevision}` : ""}`;
   }
   if (track.source === "kugou" && track.id) {
     return `o:kugou:${track.id}:${track.extId ?? ""}:${songLevel}`;
@@ -71,10 +71,11 @@ export type OnlineResolveResult =
   | { ok: false; errorCode: ErrorCode };
 
 /**
- * 经插件解析在线音频源 URL
- * @param track - 要解析的 track
- * @param quality - 音质档位（由调用方传入，默认 hq）
- * @returns 解析结果，失败时带原因码
+ * 通过插件解析曲目音频地址，独立来源直接调用所属插件
+ * @param track - 待播放曲目
+ * @param quality - 请求的音质档位，默认 hq
+ * @param skipPluginIds - 本轮音源恢复中已失败的插件标识
+ * @returns 音频地址或解析失败原因
  */
 export const resolveByPlugin = async (
   track: Track,
@@ -82,11 +83,47 @@ export const resolveByPlugin = async (
   skipPluginIds: readonly string[] = [],
 ): Promise<OnlineResolveResult> => {
   const fail = (errorCode: ErrorCode): OnlineResolveResult => ({ ok: false, errorCode });
+  const plugins = usePluginsStore();
+  if (track.source === "plugin") {
+    const origin = track.plugin;
+    if (!origin || skipPluginIds.includes(origin.pluginId)) {
+      return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+    }
+    const plugin = plugins.list.find((info) => info.manifest.id === origin.pluginId);
+    if (
+      !plugin?.enabled ||
+      plugin.status.state !== "ready" ||
+      !plugin.status.sources[origin.source]?.actions.includes("musicUrl")
+    ) {
+      return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+    }
+    try {
+      const res = await window.api.plugins.resolveUrl({
+        pluginId: origin.pluginId,
+        source: origin.source,
+        quality,
+        musicInfo: { ...origin.musicInfo, songmid: origin.musicInfo.id },
+      });
+      const current = plugins.list.find((info) => info.manifest.id === origin.pluginId);
+      if (
+        !current?.enabled ||
+        current.status.state !== "ready" ||
+        !current.status.sources[origin.source]?.actions.includes("musicUrl")
+      ) {
+        return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+      }
+      return res?.url
+        ? { ok: true, url: res.url, isTrial: false, provider: "plugin", pluginId: origin.pluginId }
+        : fail(ErrorCode.URL_RESOLVE_FAILED);
+    } catch (err) {
+      console.warn("[plugin] resolveUrl failed", origin.pluginId, err);
+      return fail(ErrorCode.URL_RESOLVE_FAILED);
+    }
+  }
   if (!isOnlinePlatform(track.source)) return fail(ErrorCode.URL_RESOLVE_FAILED);
   const pluginSource = PLATFORM_TO_PLUGIN_SOURCE[track.source];
   if (!pluginSource) return fail(ErrorCode.URL_RESOLVE_FAILED);
   const skip = new Set(skipPluginIds);
-  const plugins = usePluginsStore();
   const candidates = plugins.list.filter(
     (info) =>
       !skip.has(info.manifest.id) &&
@@ -226,7 +263,7 @@ const resolveOnlineUrl = async (
 export interface ResolvedTrackSource {
   source: string;
   fromCache: boolean;
-  provider: "local" | "cache" | "streaming" | "official" | "plugin" | "trial";
+  provider: "local" | "download" | "cache" | "streaming" | "official" | "plugin" | "trial";
   pluginId?: string;
   /**
    * 下载音源并返回可供原生预载使用的缓存路径
@@ -265,6 +302,37 @@ export const resolveTrackSource = async (
   }
   const settings = useSettingsStore();
   const songLevel = settings.player.songLevel;
+  if (track.source === "plugin") {
+    const resolved = await resolveByPlugin(track, songLevel, options.skipPluginIds);
+    if (!resolved.ok) {
+      reportLoadError(resolved.errorCode, options);
+      return null;
+    }
+    return {
+      source: resolved.url,
+      fromCache: false,
+      provider: "plugin",
+      pluginId: resolved.pluginId,
+    };
+  }
+  if (!options.skipDownloaded) {
+    try {
+      const downloaded = await window.api.download.lookup({
+        source: track.source,
+        id: track.id,
+        ...(track.source === "streaming"
+          ? {
+              serverId: track.serverId,
+              originalId: track.originalId,
+              serverRevision: track.serverRevision,
+            }
+          : {}),
+      });
+      if (downloaded) return { source: downloaded, fromCache: false, provider: "download" };
+    } catch (err) {
+      console.warn("[audio-source] download lookup failed:", err);
+    }
+  }
   const cacheKey = cacheKeyForTrack(track, songLevel);
   const cacheEnabled = settings.system.cache?.songCache?.enabled === true && cacheKey !== null;
   if (cacheEnabled) {
@@ -274,15 +342,9 @@ export const resolveTrackSource = async (
   // 流媒体
   if (track.source === "streaming") {
     try {
-      const store = useStreamingStore();
-      const streamUrl = await store.getStreamUrl(
-        track,
-        options.streamingPlaySessionId
-          ? { playSessionId: options.streamingPlaySessionId }
-          : undefined,
-      );
+      const source = streamingSourceForTrack(track);
       const result: ResolvedTrackSource = {
-        source: streamUrl,
+        source,
         fromCache: false,
         provider: "streaming",
       };
@@ -290,13 +352,10 @@ export const resolveTrackSource = async (
         // 缓存下载用独立 PlaySessionId
         result.cacheRequest = async (preloadId, signal) => {
           try {
-            const cacheUrl = await store.getStreamUrl(track, {
-              playSessionId: crypto.randomUUID(),
-            });
             if (signal?.aborted) return null;
-            return await window.api.cache.song.fetch(cacheKey, "streaming", cacheUrl, preloadId);
+            return await window.api.cache.song.fetch(cacheKey, "streaming", source, preloadId);
           } catch (err) {
-            console.warn("[cache] streaming getStreamUrl failed", err);
+            console.warn("[cache] 流媒体缓存失败", err);
             return null;
           }
         };

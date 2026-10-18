@@ -3,7 +3,8 @@
  * 任务栏歌词行的逐词高亮与溢出滚动
  * 翻译副行按原文相同的溢出滚动比例同步滚动，不溢出时保持不动
  */
-import type { LyricLine } from "@shared/types/lyrics";
+import type { LyricLine } from "lyric-kit";
+
 import { getWordSweepProgress } from "lyric-kit";
 import { getNowPlayingCurrentMs } from "@windows/shared/composables/useNowPlayingSync";
 import { getPrimaryScrollRatio, setPrimaryScrollRatio } from "./scrollSync";

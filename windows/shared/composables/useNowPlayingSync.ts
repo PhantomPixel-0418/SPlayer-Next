@@ -1,5 +1,6 @@
 import type { Ref, ShallowRef } from "vue";
-import type { LyricLine } from "@shared/types/lyrics";
+import type { LyricLine } from "lyric-kit";
+
 import type { NowPlayingSnapshot } from "@shared/types/nowPlaying";
 import type { Track } from "@shared/types/player";
 import { clampLastLineEnd } from "lyric-kit";

@@ -16,6 +16,20 @@ useExternalFileHandler();
 /** 有歌曲信息时显示播放栏 */
 const showPlayerBar = computed(() => !!useMediaStore().track);
 const { isPlayerExpanded } = storeToRefs(status);
+
+/** 播放页展开状态同步与懒加载 */
+const fullPlayerReady = ref(false);
+const FullPlayer = defineAsyncComponent(() => import("@/components/player/FullPlayer/index.vue"));
+const fullPlayerLoaded = ref(isPlayerExpanded.value);
+watch(
+  isPlayerExpanded,
+  (expanded) => {
+    if (expanded) fullPlayerLoaded.value = true;
+    window.api.window.setPlayerExpanded(expanded);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => window.api.window.setPlayerExpanded(false));
 const { appearance } = settings;
 
 /** 路由切换动效 */
@@ -56,6 +70,9 @@ watch(
   (_newPath, oldPath) => {
     if (oldPath && mainContainerRef.value) {
       mainScrollMap.set(oldPath, mainContainerRef.value.scrollTop);
+      if (mainScrollMap.size > 10) {
+        mainScrollMap.delete(mainScrollMap.keys().next().value!);
+      }
     }
   },
 );
@@ -115,7 +132,7 @@ const playerBarInnerClass = computed(() => {
   <!-- 主界面 -->
   <div
     class="h-screen flex overflow-hidden bg-app text-on-surface transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.7,0,0.3,1)] origin-center"
-    :class="isPlayerExpanded ? 'scale-95 opacity-0 pointer-events-none' : ''"
+    :class="isPlayerExpanded && fullPlayerReady ? 'scale-95 opacity-0 pointer-events-none' : ''"
   >
     <!-- 侧边栏 -->
     <aside
@@ -166,7 +183,7 @@ const playerBarInnerClass = computed(() => {
   <!-- Dialog -->
   <SDialogProvider />
   <!-- 全屏播放器 -->
-  <FullPlayer />
+  <FullPlayer v-if="fullPlayerLoaded" @vue:mounted="fullPlayerReady = true" />
   <!-- 全局设置 -->
   <SettingsDialog />
   <!-- 更新弹窗 -->

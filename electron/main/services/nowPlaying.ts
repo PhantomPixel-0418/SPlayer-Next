@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { Track, PlayerState, LoadResult } from "@shared/types/player";
-import type { LyricLine, LyricData } from "@shared/types/lyrics";
+import type { LyricLine } from "lyric-kit";
+import type { LyricData } from "@shared/types/lyrics";
+
 import type {
   NowPlayingSnapshot,
   NowPlayingPositionSync,

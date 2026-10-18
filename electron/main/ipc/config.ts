@@ -35,6 +35,7 @@ import { setOrpheusProtocolRegistered } from "@main/services/orpheus";
 import { setTaskbarThumbnailEnabled } from "@main/services/thumbnail";
 import { getUpdateState, syncUpdateChannel } from "@main/services/updater";
 import { UPDATE_CHANNELS } from "@shared/types/settings";
+import { refreshPowerBlocker } from "@main/utils/powerBlocker";
 
 /**
  * 应用配置写入后的副作用
@@ -43,6 +44,9 @@ import { UPDATE_CHANNELS } from "@shared/types/settings";
  */
 const applyConfigChange = (keyPath: string, value: unknown): void => {
   switch (keyPath) {
+    case "player.keepScreenAwake":
+      refreshPowerBlocker();
+      break;
     case "update.channel":
       syncUpdateChannel();
       break;
@@ -155,6 +159,7 @@ export const registerConfigIpc = (): void => {
     if (getUpdateState().phase === "installing") throw new Error("安装启动中，无法重置配置");
     store.clear();
     syncUpdateChannel();
+    refreshPowerBlocker();
   });
 
   /** 替换整盘配置 */
@@ -162,6 +167,7 @@ export const registerConfigIpc = (): void => {
     if (getUpdateState().phase === "installing") throw new Error("安装启动中，无法替换配置");
     store.replaceAll(payload);
     syncUpdateChannel();
+    refreshPowerBlocker();
   });
 
   /** 备份 */

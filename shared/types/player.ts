@@ -1,5 +1,8 @@
-import type { LyricFormat } from "./lyrics";
+import type { PlaybackQueueSnapshot } from "./music";
+import type { LyricFormat } from "lyric-kit";
+
 import type { Platform } from "./platform";
+import type { MusicSearchCandidate } from "./plugin";
 
 /** 播放器状态 */
 export type PlayerState = "idle" | "loading" | "playing" | "paused" | "stopped";
@@ -10,8 +13,8 @@ export type RepeatMode = "list" | "one";
 /** 随机模式 */
 export type ShuffleMode = "off" | "on";
 
-/** 歌曲来源：本地 / 流媒体 / 在线平台 */
-export type TrackSource = "local" | "streaming" | Platform;
+/** 歌曲来源：本地 / 流媒体 / 在线平台 / 插件 */
+export type TrackSource = "local" | "streaming" | "plugin" | Platform;
 
 /** 播放来源类型 */
 export type PlaybackOriginType = "track" | "playlist" | "album" | "artist" | "radio" | "page";
@@ -30,6 +33,7 @@ export interface PlaybackContext {
 
 /** 歌手 */
 export interface Artist {
+  serverId?: string;
   id?: string;
   name: string;
   avatar?: string;
@@ -39,6 +43,7 @@ export interface Artist {
 
 /** 专辑 */
 export interface Album {
+  serverId?: string;
   id?: string;
   name: string;
   /** 封面 URL */
@@ -53,6 +58,7 @@ export interface Album {
 
 /** 歌单 */
 export interface Playlist {
+  serverId?: string;
   id?: string;
   name: string;
   cover?: string;
@@ -72,7 +78,7 @@ export interface AudioQuality {
 }
 
 /**
- * 付费标记，遵循网易云 fee 规范
+ * 付费标记，遵循 NCM fee 规范
  * - 0: 免费
  * - 1: VIP
  * - 4: 需购买（数字专辑等）
@@ -82,6 +88,8 @@ export type TrackFee = 0 | 1 | 4 | 8;
 
 /** 歌曲信息 */
 export interface Track {
+  /** 服务端权威收藏状态；缺失表示尚未读取 */
+  favorite?: boolean;
   /** 平台 id */
   id: string;
   /** 平台二级 id */
@@ -90,6 +98,12 @@ export interface Track {
   mediaId?: string;
   /** 歌曲来源 */
   source: TrackSource;
+  /** 独立插件来源及重新取数所需的轻量曲目信息 */
+  plugin?: {
+    pluginId: string;
+    source: string;
+    musicInfo: MusicSearchCandidate;
+  };
   /** 本地路径 */
   path?: string;
   /** CUE 文件路径 */
@@ -104,6 +118,8 @@ export interface Track {
   serverId?: string;
   /** 流媒体服务器原生 ID（仅 source==='streaming'） */
   originalId?: string;
+  /** 流媒体账号或地址变更后的媒体身份代次 */
+  serverRevision?: number;
   /** 标题 */
   title: string;
   /** 注释/副标题 */
@@ -226,6 +242,7 @@ export type PlayerEvent =
   | { type: "playTrack"; data: { track: Track } }
   | { type: "setShuffle"; data: { mode: ShuffleMode } }
   | { type: "setRepeat"; data: { mode: RepeatMode } }
+  | { type: "getQueue"; data: { requestId: string; offset: number; limit: number } }
   | { type: "addToQueue"; data: { tracks: Track[]; position: "next" | "end" } }
   | { type: "toggleLike" }
   | { type: "fftData"; data: FftData }
@@ -321,8 +338,13 @@ export interface PlayerApi {
   pause: () => Promise<IpcResponse>;
   /** 停止播放 */
   stop: () => Promise<IpcResponse>;
-  /** 跳转到指定位置（毫秒） */
-  seek: (positionMs: number) => Promise<IpcResponse>;
+  /**
+   * 跳转到指定位置，单曲循环重播需要同时开启统计轮次
+   * @param positionMs - 目标位置，单位为毫秒
+   * @param restartRound - 是否开启新的播放统计轮次
+   * @returns 原生跳转结果
+   */
+  seek: (positionMs: number, restartRound?: boolean) => Promise<IpcResponse>;
   /** 设置音量（0.0 ~ 1.0） */
   setVolume: (volume: number) => Promise<IpcResponse>;
   /** 设置输出设备切换时暂停播放 */
@@ -371,10 +393,21 @@ export interface PlayerApi {
   getSelectedDeviceName: () => Promise<IpcResponse<string | null>>;
   /** 同步播放模式到托盘 */
   syncPlayMode: (repeatMode: string, shuffleMode: string) => void;
+  /**
+   * 同步主窗口当前队列索引
+   * @param index - 当前队列索引，无当前队列项时为 -1
+   */
+  syncQueueIndex: (index: number) => void;
   /** 同步当前歌曲喜欢状态到托盘 */
   syncLikeState: (liked: boolean) => void;
   /** 广播播放控制事件 */
   dispatch: (type: string) => void;
+  /**
+   * 回传主进程请求的队列分页
+   * @param requestId - 队列查询标识
+   * @param snapshot - 队列分页及当前播放索引
+   */
+  respondQueue: (requestId: string, snapshot: PlaybackQueueSnapshot) => void;
   /** 订阅播放事件 */
   onEvent: (callback: (event: PlayerEvent) => void) => () => void;
 }

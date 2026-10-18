@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { NeteaseSong } from "@/types/netease";
+import type { NeteaseSong } from "@shared/types/platform/netease";
 import { songToTrack } from "./netease";
 
-describe("网易云歌曲歌手格式化", () => {
+describe("NCM歌曲歌手格式化", () => {
   it.each(["ar", "artists"])("过滤 %s 中的空名称，保留有效歌手", (field) => {
     const song = {
       id: 325,

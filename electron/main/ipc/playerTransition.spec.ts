@@ -10,7 +10,12 @@ const mocks = vi.hoisted(() => ({
   metadata: vi.fn(),
   prepareTransition: vi.fn(),
   cancel: vi.fn(),
+  streamingPrepare: vi.fn(),
+  streamingStart: vi.fn(),
+  streamingStop: vi.fn(),
   mediaEvent: (_event: { type: string; positionMs?: number }) => {},
+  scrobbleRestart: vi.fn(),
+  lastfmRestart: vi.fn(),
 }));
 vi.mock("electron", () => ({
   ipcMain: {
@@ -30,6 +35,7 @@ vi.mock("@main/services/engine", () => {
     getDuration: () => 10,
     getPosition: () => 5,
     getSpeed: () => 1,
+    getVolume: () => 1,
     getCoverRaw: () => null,
     getStatus: () => ({ state: "playing" }),
   };
@@ -40,6 +46,9 @@ vi.mock("@main/services/engine", () => {
     resetPlayer: () => mocks.reset.forEach((callback) => callback()),
   };
 });
+vi.mock("@main/services/playerControl", () => ({
+  playerControl: { syncQueueIndex: vi.fn() },
+}));
 vi.mock("@main/services/playerPreload", () => ({
   prepareNextTrack: vi.fn(),
   cancelPreparedTrack: mocks.cancel,
@@ -71,8 +80,25 @@ vi.mock("@main/utils/protocol", () => ({ toCacheUrl: () => undefined }));
 vi.mock("@main/utils/config", () => ({ appName: "SPlayer", getSongCacheDir: () => "cache" }));
 vi.mock("@main/utils/fetchBytes", () => ({}));
 vi.mock("@main/utils/powerBlocker", () => ({}));
-vi.mock("@main/services/lastfm", () => ({ onTrackLoaded: vi.fn() }));
-vi.mock("@main/services/neteaseScrobble", () => ({ onTrackLoaded: vi.fn() }));
+vi.mock("@main/services/lastfm", () => ({
+  onTrackLoaded: vi.fn(),
+  onStopped: vi.fn(),
+  onRepeatOneRestart: mocks.lastfmRestart,
+}));
+vi.mock("@main/services/neteaseScrobble", () => ({
+  onTrackLoaded: vi.fn(),
+  onStopped: vi.fn(),
+  onRepeatOneRestart: mocks.scrobbleRestart,
+}));
+vi.mock("@main/services/streaming/playback", () => ({
+  prepareStreamingPlayback: mocks.streamingPrepare,
+  startStreamingPlayback: mocks.streamingStart,
+  stopStreamingPlayback: mocks.streamingStop,
+  onStreamingSeek: vi.fn(),
+}));
+vi.mock("@main/services/streaming/adapters/resolve", () => ({
+  invalidateStreamingSession: vi.fn(),
+}));
 vi.mock("@main/services/songCache", () => ({}));
 vi.mock("@main/services/thumbar", () => ({ getThumbar: () => null }));
 vi.mock("@main/services/tray", () => ({ setTraySongName: vi.fn(), setTrayPlayState: vi.fn() }));
@@ -83,10 +109,26 @@ vi.mock("@main/store", () => ({ store: { get: () => false } }));
 const meta = { title: "Next", duration: 10, artist: "", album: "" };
 const options = { meta: { id: "next", title: "Next", source: "local", artists: [] } };
 
-/** 调用注册后的 IPC 处理器，验证原生响应返回后的提交顺序。 */
+/**
+ * 调用注册后的 IPC 处理器，验证原生响应提交顺序
+ * @param name - IPC 通道
+ * @param args - 通道参数
+ * @returns 处理器返回值
+ */
 const invoke = (name: string, ...args: unknown[]) => mocks.handlers.get(name)!(null, ...args);
 
 describe("交接响应的主进程竞态保护", () => {
+  it("单曲重播先开启两种统计轮次，普通跳转不重置轮次", async () => {
+    expect(await invoke("player:seek", 0, true)).toEqual({ success: true });
+    expect(mocks.scrobbleRestart).toHaveBeenCalledOnce();
+    expect(mocks.lastfmRestart).toHaveBeenCalledOnce();
+    expect(mocks.scrobbleRestart.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.seek.mock.invocationCallOrder[0]!,
+    );
+    expect(await invoke("player:seek", 1000)).toEqual({ success: true });
+    expect(mocks.scrobbleRestart).toHaveBeenCalledOnce();
+    expect(mocks.lastfmRestart).toHaveBeenCalledOnce();
+  });
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -94,6 +136,8 @@ describe("交接响应的主进程竞态保护", () => {
     mocks.reset.length = 0;
     mocks.seek.mockResolvedValue(undefined);
     mocks.load.mockResolvedValue(meta);
+    mocks.streamingPrepare.mockReset().mockResolvedValue(undefined);
+    mocks.streamingStop.mockResolvedValue(undefined);
     const { registerPlayerIpc } = await import("./player");
     registerPlayerIpc();
   });
@@ -158,5 +202,71 @@ describe("交接响应的主进程竞态保护", () => {
     ).toMatchObject({ success: true, data: { playback: { state: "playing" } } });
     expect(mocks.metadata).toHaveBeenCalledOnce();
     expect(mocks.prepareTransition).toHaveBeenCalledOnce();
+  });
+
+  it("流媒体加载由主进程解析地址，解码成功后才绑定播放会话", async () => {
+    mocks.streamingPrepare.mockResolvedValueOnce({
+      url: "https://server/audio",
+      sessionId: "new-play",
+    });
+    const track = {
+      id: "server:song",
+      originalId: "song",
+      serverId: "server",
+      source: "streaming",
+      title: "歌曲",
+      artists: [],
+      duration: 10000,
+    };
+    expect(await invoke("player:load", "streaming://server/song", { meta: track })).toMatchObject({
+      success: true,
+    });
+    expect(mocks.load).toHaveBeenCalledWith("https://server/audio", true, undefined);
+    expect(mocks.streamingStart).toHaveBeenCalledWith(
+      track,
+      { url: "https://server/audio", sessionId: "new-play" },
+      10000,
+      true,
+    );
+  });
+
+  it("停止时作废尚未完成的流媒体地址解析，不能产生迟到播放会话", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.streamingPrepare.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const track = {
+      id: "server:song",
+      originalId: "song",
+      serverId: "server",
+      source: "streaming",
+      title: "歌曲",
+      artists: [],
+      duration: 10000,
+    };
+    const pending = invoke("player:load", "streaming://server/song", { meta: track });
+    await invoke("player:stop");
+    finish({ url: "https://server/audio", sessionId: "old-play" });
+    expect(await pending).toMatchObject({ success: false });
+    expect(mocks.load).not.toHaveBeenCalled();
+    expect(mocks.streamingStart).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["[DecodeFailed] invalid audio data", "FILE_DECODE_ERROR"],
+    ["[SourceNotFound] HTTP 404", "FILE_NOT_FOUND"],
+    ["[NetworkUnreachable] connection refused", "NETWORK_ERROR"],
+    ["[Device] output unavailable", "DEVICE_NOT_FOUND"],
+    ["[Cancelled] superseded", "LOAD_SUPERSEDED"],
+    ["unclassified remote error", "NETWORK_ERROR"],
+  ])("远程音源保留原生错误分类 %s", async (message, error) => {
+    mocks.load.mockRejectedValueOnce(new Error(message));
+    expect(await invoke("player:load", "https://music/song.flac", {})).toEqual({
+      success: false,
+      error,
+    });
   });
 });
