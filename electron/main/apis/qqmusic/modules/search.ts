@@ -2,7 +2,7 @@
  * QM 四分类搜索
  */
 
-import { formatSingerName } from "../core/config";
+import { decodeName, formatSingerName } from "../core/config";
 import { qmRequest } from "../core/request";
 import { normalizeQMSong, type QMAudioInfo } from "../core/song";
 import type { QMAlbumItem, QMArtistItem, QMPlaylistItem } from "@shared/types/platform/qqmusic";
@@ -111,9 +111,9 @@ const searchAlbums = async (keywords: string, page: number, limit: number) => {
   const data = await searchMobile(keywords, page, limit, 2);
   const albums: QMAlbumItem[] = (data.body?.item_album ?? []).map((album) => ({
     id: album.albummid ?? String(album.id ?? ""),
-    name: album.name ?? "",
+    name: decodeName(album.name),
     cover: secureUrl(album.pic),
-    artist: album.singer || formatSingerName(album.singer_list),
+    artist: decodeName(album.singer || formatSingerName(album.singer_list)),
     artistMid: album.singer_list?.[0]?.mid ?? "",
     trackCount: album.song_num ?? 0,
   }));
@@ -131,7 +131,7 @@ const searchArtists = async (keywords: string, page: number, limit: number) => {
   const data = await searchMobile(keywords, page, limit, 1);
   const artists: QMArtistItem[] = (data.body?.singer ?? []).map((artist) => ({
     id: artist.singerMID ?? String(artist.singerID ?? ""),
-    name: artist.singerName ?? "",
+    name: decodeName(artist.singerName),
     cover: secureUrl(artist.singerPic || artist.iconurl),
     albumCount: artist.albumNum ?? 0,
     songCount: artist.songNum ?? 0,
@@ -150,9 +150,9 @@ const searchPlaylists = async (keywords: string, page: number, limit: number) =>
   const data = await searchMobile(keywords, page, limit, 3);
   const playlists: QMPlaylistItem[] = (data.body?.item_songlist ?? []).map((playlist) => ({
     id: playlist.dissid ?? "",
-    name: stripHighlight(playlist.dissname),
+    name: decodeName(stripHighlight(playlist.dissname)),
     cover: secureUrl(playlist.logo || playlist.layer_url),
-    creator: playlist.nickname ?? "",
+    creator: decodeName(playlist.nickname),
     trackCount: playlist.songnum ?? 0,
     playCount: playlist.listennum ?? 0,
   }));

@@ -7,7 +7,7 @@
  */
 
 import { qmRequest } from "../core/request";
-import { formatSingerName } from "../core/config";
+import { formatSingerName, decodeName } from "../core/config";
 import type { QMModule } from "../core/types";
 
 interface TrackInfo {
@@ -37,9 +37,9 @@ const songInfo: QMModule = async (params) => {
     song: {
       id: String(track.id),
       mid: track.mid,
-      name: track.title,
+      name: decodeName(track.title),
       artist: formatSingerName(track.singer),
-      album: track.album?.name ?? "",
+      album: decodeName(track.album?.name),
       albumMid: track.album?.mid ?? "",
       duration: (track.interval ?? 0) * 1000,
       file: track.file,

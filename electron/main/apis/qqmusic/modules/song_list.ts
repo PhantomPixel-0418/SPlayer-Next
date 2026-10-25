@@ -7,7 +7,7 @@
  * - id  disstid（歌单 ID，必填）
  */
 
-import { QM_HEADERS, formatSingerName } from "../core/config";
+import { QM_HEADERS, formatSingerName, decodeName } from "../core/config";
 import type { QMSong } from "@shared/types/platform/qqmusic";
 import type { QMModule } from "../core/types";
 
@@ -75,10 +75,10 @@ const songList: QMModule = async (params) => {
   const songs: QMSong[] = (cd.songlist ?? []).map((item) => ({
     id: String(item.songid ?? ""),
     mid: item.songmid ?? "",
-    name: item.songname ?? "",
+    name: decodeName(item.songname),
     artist: formatSingerName(item.singer),
     artists: item.singer ?? [],
-    album: item.albumname ?? "",
+    album: decodeName(item.albumname),
     albumMid: item.albummid ?? "",
     duration: (item.interval ?? 0) * 1000,
     mediaMid: item.strMediaMid ?? "",
@@ -93,9 +93,9 @@ const songList: QMModule = async (params) => {
   return {
     code: 200,
     id: cd.disstid,
-    name: cd.dissname ?? "",
-    description: cd.desc ?? "",
-    creator: cd.nickname ?? "",
+    name: decodeName(cd.dissname),
+    description: decodeName(cd.desc),
+    creator: decodeName(cd.nickname),
     cover: cd.logo ?? "",
     playCount: cd.visitnum ?? 0,
     total: cd.songnum ?? songs.length,

@@ -1,5 +1,5 @@
 import type { QMSong } from "@shared/types/platform/qqmusic";
-import { formatSingerName } from "./config";
+import { decodeName, formatSingerName } from "./config";
 
 /** 搜索、专辑与歌手接口共用的上游歌曲结构 */
 export interface QMAudioInfo {
@@ -41,10 +41,10 @@ export const normalizeQMSong = (song: QMAudioInfo, albumMid = ""): QMSong => {
   return {
     id: String(song.id ?? ""),
     mid: song.mid ?? "",
-    name: song.title ?? song.name ?? "",
+    name: decodeName(song.title ?? song.name),
     artist: formatSingerName(song.singer),
     artists: song.singer ?? [],
-    album: song.album?.name || song.album?.title || "",
+    album: decodeName(song.album?.name || song.album?.title),
     albumMid: mid,
     duration: (song.interval ?? 0) * 1000,
     mediaMid: song.file?.media_mid ?? "",

@@ -1,6 +1,7 @@
 /** QM 歌手详情、热门歌曲与专辑 */
 
 import { qmRequest } from "../core/request";
+import { decodeName } from "../core/config";
 import { normalizeQMSong, type QMAudioInfo } from "../core/song";
 import type { QMAlbumItem } from "@shared/types/platform/qqmusic";
 import type { QMModule } from "../core/types";
@@ -54,8 +55,8 @@ const artist: QMModule = async (params) => {
   });
   const albums: QMAlbumItem[] = (albumsData.list ?? []).map((album) => ({
     id: album.album_mid ?? "",
-    name: album.album_name ?? "",
-    artist: album.singer_name ?? "",
+    name: decodeName(album.album_name),
+    artist: decodeName(album.singer_name),
     trackCount: album.latest_song?.song_count ?? 0,
     publishTime: album.pub_time,
   }));
