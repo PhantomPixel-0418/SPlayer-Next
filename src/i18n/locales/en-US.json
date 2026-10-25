@@ -931,6 +931,10 @@
       "label": "Preload next track",
       "description": "Cache and decode the next track in advance, which may increase network usage"
     },
+    "dynamicCover": {
+      "label": "Dynamic Cover",
+      "description": "Show animated covers for supported songs (cover mode only)"
+    },
     "outputDevice": {
       "label": "Output Device",
       "description": "Select audio output device",

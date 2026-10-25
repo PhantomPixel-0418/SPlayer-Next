@@ -174,6 +174,7 @@ export const useSettingsStore = defineStore(
       transitionPreference: "standard",
       searchPlayBehavior: "current",
       songListPlayBehavior: "current",
+      dynamicCover: false,
     });
 
     /** 强迫症设置 */

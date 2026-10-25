@@ -50,6 +50,7 @@ const NON_CACHEABLE: ReadonlySet<string> = new Set([
   "deviceinfo_center_upload",
   "song_url",
   "song_download_url",
+  "song_dynamic_cover",
   "scrobble",
   "scrobble_v1",
   "like",

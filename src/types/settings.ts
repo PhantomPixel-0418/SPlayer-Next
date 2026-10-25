@@ -306,6 +306,8 @@ export interface PlayerSettings {
   searchPlayBehavior: PlayBehavior;
   /** 歌曲列表行首播放按钮的行为 */
   songListPlayBehavior: PlayBehavior;
+  /** 是否展示动态封面（仅网易云来源，封面模式有效） */
+  dynamicCover: boolean;
 }
 
 /** 外观设置 */
