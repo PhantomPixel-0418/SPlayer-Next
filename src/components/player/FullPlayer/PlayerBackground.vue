@@ -142,6 +142,7 @@ onBeforeUnmount(() => {
       :has-lyric="media.parsedLyric.length > 0"
       :enable-beat="settings.player.playerBgBeat"
       :render-engine="settings.player.playerBgRenderer"
+      :titanium-options="settings.player.playerBgTitanium"
       @ready="fluidReady = true"
     />
   </div>

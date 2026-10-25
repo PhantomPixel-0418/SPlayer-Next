@@ -7,11 +7,29 @@ import { ALL_PLATFORMS } from "@shared/types/platform";
 import type { CjkTransformMode } from "@shared/types/opencc";
 import type { QualityLevel } from "@/utils/quality";
 import type { LyricAlignment } from "lyric-dom";
+import type { PaletteAlgorithm } from "@applemusic-like-lyrics/core";
 
 /** 播放器背景类型 */
 export type PlayerBgType = "blur" | "solid" | "animation";
 /** 流体背景渲染引擎 */
-export type PlayerBgRenderer = "mesh" | "isolation" | "pixi";
+export type PlayerBgRenderer = "mesh" | "isolation" | "pixi" | "titanium";
+/** 流沙渲染器选项 */
+export interface TitaniumBgOptions {
+  /** 沙面的粉末质感强度 */
+  grain: number;
+  /** 金属闪粉的强度 */
+  sparkle: number;
+  /** 金属高光的强度 */
+  sheen: number;
+  /** 向画面亮度去饱和的金属化程度 */
+  metalness: number;
+  /** 更换封面时锋线迁移到新姿态所需的时长 */
+  crestShiftMs: number;
+  /** 从封面提取主色所用的聚类算法 */
+  paletteAlgorithm: PaletteAlgorithm;
+  /** 启用屏幕空间抖动，减少大面积色带 */
+  dithering: boolean;
+}
 export type CoverLayout = "default" | "fullscreen";
 
 /**
@@ -238,6 +256,8 @@ export interface PlayerSettings {
   playerBgFreezeOnPause: boolean;
   /** 流体背景随低频节拍脉动 */
   playerBgBeat: boolean;
+  /** 流沙渲染器参数 */
+  playerBgTitanium: TitaniumBgOptions;
   /** 全屏播放器封面布局 */
   coverLayout: CoverLayout;
   /** 播放页封面/歌词分栏占比（0-1，封面侧宽度） */
