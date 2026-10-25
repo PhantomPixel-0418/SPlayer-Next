@@ -98,6 +98,20 @@ const BASS_DECAY = 0.14;
 let smoothedPulse = 0;
 let lastFftFrame: readonly [number[], number[]] = [[], []];
 
+/** AMLL 低频音量基线，其渲染器以 1.0 表示无节拍 */
+const AMLL_VOLUME_BASE = 1;
+/** AMLL 低频音量区间，配合基线构成 [1, 3.4] */
+const AMLL_VOLUME_RANGE = 2.4;
+
+/**
+ * 流沙渲染器按 [0, 1] 取值，需把 AMLL 的 [1, 3.4] 归一化回去，
+ * 否则其内部 clamp01 会把任何输入恒钳为 1，脉动完全失效
+ * @param volume - AMLL 低频音量
+ * @returns 归一化后的低频音量
+ */
+const toTitaniumLowFreqVolume = (volume: number): number =>
+  (volume - AMLL_VOLUME_BASE) / AMLL_VOLUME_RANGE;
+
 /**
  * 从最新 FFT 帧数据计算低频音量能量值 [0.0 - 1.0]
  */
@@ -111,7 +125,10 @@ const updateLowFreqVolume = () => {
   const smoothFactor = pulse > smoothedPulse ? BASS_ATTACK : BASS_DECAY;
   smoothedPulse = smoothedPulse + smoothFactor * (pulse - smoothedPulse);
 
-  bgRenderRef.value?.setLowFreqVolume(toAmllLowFreqVolume(smoothedPulse));
+  const volume = toAmllLowFreqVolume(smoothedPulse);
+  bgRenderRef.value?.setLowFreqVolume(
+    props.renderEngine === "titanium" ? toTitaniumLowFreqVolume(volume) : volume,
+  );
 };
 
 const { resume: resumeFftLoop, pause: pauseFftLoop } = useRafFn(updateLowFreqVolume, {
@@ -154,7 +171,8 @@ const syncFftCapture = () => {
     if (!props.enableBeat) {
       smoothedPulse = 0;
       lastFftFrame = [[], []];
-      bgRenderRef.value?.setLowFreqVolume(1.0);
+      // 流沙渲染器的无节拍基线是 0，其余渲染器是 1
+      bgRenderRef.value?.setLowFreqVolume(props.renderEngine === "titanium" ? 0 : 1.0);
     }
   }
 };
@@ -164,15 +182,20 @@ const getRendererClass = (): new (canvas: HTMLCanvasElement) => BaseRenderer => 
   return resolveRendererClass(props.renderEngine ?? "mesh");
 };
 
-/** 流沙渲染器专属选项通道，core 0.6.0 的其它渲染器均无此方法 */
+/** 流沙渲染器专属选项通道 */
 interface RendererOptionsChannel {
   setOptions(patch: Partial<TitaniumBgOptions>): void;
 }
 
-/** 下发流沙渲染器参数；包装类不透传，需经 getRenderer 拿实例本体 */
+/**
+ * 下发流沙渲染器参数；包装类不透传，需经 getRenderer 拿实例本体
+ * 必须按渲染器身份过滤：isolation 也有同名 setOptions，且其 dithering /
+ * paletteAlgorithm 与本渲染器同名，直接下发会静默改掉对方的选项
+ */
 const applyTitaniumOptions = () => {
+  if (props.renderEngine !== "titanium" || !props.titaniumOptions) return;
   const renderer = bgRenderRef.value?.getRenderer() as Partial<RendererOptionsChannel> | undefined;
-  renderer?.setOptions?.(props.titaniumOptions ?? {});
+  renderer?.setOptions?.(props.titaniumOptions);
 };
 
 /**

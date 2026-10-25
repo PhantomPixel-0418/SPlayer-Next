@@ -8,14 +8,14 @@
 
 import { clamp01 } from "./clamp";
 import { loadResourceFromElement, loadResourceFromUrl } from "./resource";
-import { BaseRenderer } from "@applemusic-like-lyrics/core";
-import { GLProgram } from "./gl-program";
 import {
+  BaseRenderer,
   type ColorVec3,
   createPaletteFromImage,
+  GLProgram,
   type PaletteAlgorithm,
   srgbToOkLab,
-} from "./palette/index";
+} from "@applemusic-like-lyrics/core";
 import { isHighpFragmentSupported, isWebGL1Supported } from "./support";
 import titaniumFragShader from "./titanium.frag.glsl?raw";
 import titaniumVertShader from "./titanium.vert.glsl?raw";
@@ -559,6 +559,8 @@ export class TitaniumRenderer extends BaseRenderer {
     }
 
     this.albumSource = source;
+    // 图片已解码，blob URL 不再需要，立刻释放避免逐曲累积
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
     // 换封面时锋线缓缓挪到新的随机姿态
     this.rollCrestTarget();
     // 视频封面只取首帧主色
