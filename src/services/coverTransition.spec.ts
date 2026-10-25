@@ -31,7 +31,7 @@ const setupNavigation = async () => {
     const ready = Promise.resolve().then(update);
     return { ready, finished: completed.promise, skipTransition: completed.resolve };
   });
-  Object.assign(scope, { startViewTransition: start });
+  Object.assign(document, { startViewTransition: start });
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -58,6 +58,7 @@ afterEach(async () => {
   dispose?.();
   dispose = undefined;
   await flushPromises();
+  delete (document as Partial<Document>).startViewTransition;
   document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
@@ -102,11 +103,11 @@ describe("封面共享过渡回归", () => {
   });
 
   it.each(["关闭动画", "缺少原生 API"])("%s 时继续普通导航", async (condition) => {
-    const { router, scope, start } = await setupNavigation();
+    const { router, start } = await setupNavigation();
     if (condition === "关闭动画") {
       dispose?.();
       dispose = undefined;
-    } else Object.assign(scope, { startViewTransition: undefined });
+    } else Object.assign(document, { startViewTransition: undefined });
     const timer = vi.spyOn(window, "setTimeout");
     captureCover(album, "cover");
     if (condition === "关闭动画") expect(timer).not.toHaveBeenCalled();
