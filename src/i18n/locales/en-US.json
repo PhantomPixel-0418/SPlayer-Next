@@ -1549,7 +1549,8 @@
       "description": "Select the rendering engine for fluid animation background",
       "mesh": "Mesh Gradient Renderer",
       "isolation": "Isolation Renderer",
-      "pixi": "PixiJS Renderer"
+      "pixi": "PixiJS Renderer",
+      "titanium": "Titanium renderer"
     },
     "playerBgFlowSpeed": {
       "label": "Flow Speed",
@@ -1570,6 +1571,37 @@
     "playerBgBeat": {
       "label": "Beat Pulse",
       "description": "Make the fluid background pulse with the low-frequency beat of the music"
+    },
+    "titaniumPaletteAlgorithm": {
+      "label": "Cover palette algorithm",
+      "description": "Clustering algorithm used to extract the cover palette",
+      "auto": "Auto select (K-Means / Octree)",
+      "kmeans": "K-Means",
+      "octtree": "Octree"
+    },
+    "titaniumGrain": {
+      "label": "Grain",
+      "description": "Powder-grain intensity of the sand surface"
+    },
+    "titaniumSparkle": {
+      "label": "Sparkle",
+      "description": "Intensity of the metallic sparkle"
+    },
+    "titaniumSheen": {
+      "label": "Sheen",
+      "description": "Intensity of the metallic sheen"
+    },
+    "titaniumMetalness": {
+      "label": "Metalness",
+      "description": "How much the highlights desaturate toward metal"
+    },
+    "titaniumCrestShift": {
+      "label": "Crest shift duration",
+      "description": "How long the crest takes to settle into a new shape when the cover changes"
+    },
+    "titaniumDithering": {
+      "label": "Dithering",
+      "description": "Enable screen-space dithering to reduce banding"
     },
     "coverLayout": {
       "label": "Cover Layout",

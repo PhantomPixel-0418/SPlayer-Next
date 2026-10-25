@@ -1,10 +1,102 @@
-import type { SettingCategory } from "@/types/settings-schema";
+import type { SettingCategory, SettingItem, SettingOption } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
+import type { PlayerBgRenderer } from "@/types/settings";
 import FontConfig from "@/components/settings/custom/FontConfig.vue";
 import BackgroundImagePicker from "@/components/settings/custom/BackgroundImagePicker.vue";
 import SidebarCustomizeConfig from "@/components/settings/custom/SidebarCustomizeConfig.vue";
 import IconLucidePalette from "~icons/lucide/palette";
+
+/** 当前渲染器为流沙渲染器 */
+const isTitaniumActive = (): boolean => useSettingsStore().player.playerBgRenderer === "titanium";
+
+/** 支持低频脉动的渲染器 */
+const BEAT_RENDERERS = new Set<PlayerBgRenderer>(["mesh", "titanium"]);
+
+const RENDERER_OPTIONS: SettingOption[] = [
+  { value: "mesh", labelKey: "settings.playerBgRenderer.mesh" },
+  { value: "isolation", labelKey: "settings.playerBgRenderer.isolation" },
+  { value: "pixi", labelKey: "settings.playerBgRenderer.pixi" },
+  { value: "titanium", labelKey: "settings.playerBgRenderer.titanium" },
+];
+
+/** 流沙渲染器参数项，顺序与官方一致：取色算法决定底层输入故前置，抖动是后期处理故置尾 */
+const TITANIUM_ITEMS: SettingItem[] = [
+  {
+    key: "titaniumPaletteAlgorithm",
+    type: "select",
+    binding: { store: "settings", path: "player.playerBgTitanium.paletteAlgorithm" },
+    options: [
+      { value: "auto", labelKey: "settings.titaniumPaletteAlgorithm.auto" },
+      { value: "kmeans", labelKey: "settings.titaniumPaletteAlgorithm.kmeans" },
+      { value: "octtree", labelKey: "settings.titaniumPaletteAlgorithm.octtree" },
+    ],
+    defaultValue: "auto",
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumGrain",
+    type: "slider",
+    binding: { store: "settings", path: "player.playerBgTitanium.grain" },
+    min: 0,
+    max: 1,
+    step: 0.01,
+    defaultValue: 0.7,
+    marks: { 0: "0", 0.7: "0.7", 1: "1" },
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumSparkle",
+    type: "slider",
+    binding: { store: "settings", path: "player.playerBgTitanium.sparkle" },
+    min: 0,
+    max: 1,
+    step: 0.01,
+    defaultValue: 0.75,
+    marks: { 0: "0", 0.75: "0.75", 1: "1" },
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumSheen",
+    type: "slider",
+    binding: { store: "settings", path: "player.playerBgTitanium.sheen" },
+    min: 0,
+    max: 1,
+    step: 0.01,
+    defaultValue: 0.5,
+    marks: { 0: "0", 0.5: "0.5", 1: "1" },
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumMetalness",
+    type: "slider",
+    binding: { store: "settings", path: "player.playerBgTitanium.metalness" },
+    min: 0,
+    max: 1,
+    step: 0.01,
+    defaultValue: 0.35,
+    marks: { 0: "0", 0.35: "0.35", 1: "1" },
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumCrestShift",
+    type: "number",
+    binding: { store: "settings", path: "player.playerBgTitanium.crestShiftMs" },
+    min: 300,
+    max: 6000,
+    step: 100,
+    defaultValue: 2000,
+    unit: "ms",
+    visible: isTitaniumActive,
+  },
+  {
+    key: "titaniumDithering",
+    type: "switch",
+    binding: { store: "settings", path: "player.playerBgTitanium.dithering" },
+    defaultValue: true,
+    visible: isTitaniumActive,
+  },
+];
 
 const appearanceCategory: SettingCategory = {
   id: "appearance",
@@ -271,11 +363,7 @@ const appearanceCategory: SettingCategory = {
               key: "playerBgRenderer",
               type: "select",
               binding: { store: "settings", path: "player.playerBgRenderer" },
-              options: [
-                { value: "mesh", labelKey: "settings.playerBgRenderer.mesh" },
-                { value: "isolation", labelKey: "settings.playerBgRenderer.isolation" },
-                { value: "pixi", labelKey: "settings.playerBgRenderer.pixi" },
-              ],
+              options: RENDERER_OPTIONS,
               defaultValue: "mesh",
             },
             {
@@ -318,9 +406,11 @@ const appearanceCategory: SettingCategory = {
               key: "playerBgBeat",
               type: "switch",
               binding: { store: "settings", path: "player.playerBgBeat" },
-              visible: () => useSettingsStore().player.playerBgRenderer === "mesh",
+              // 刻意不叠加 bgRendererSupport：流沙渲染器缺失时会降级到网格渐变，脉动依然有效
+              visible: () => BEAT_RENDERERS.has(useSettingsStore().player.playerBgRenderer),
               defaultValue: false,
             },
+            ...TITANIUM_ITEMS,
           ],
         },
         {
