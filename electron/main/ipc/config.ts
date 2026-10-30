@@ -14,6 +14,7 @@ import {
   setEqualizerEnabled,
   setEqualizerBands,
   setPreampGain,
+  setExclusiveMode,
 } from "@main/services/engine";
 import {
   setTaskbarProgress,
@@ -32,10 +33,23 @@ import { startServer, stopServer } from "@main/server";
 import { startMcpServer, stopMcpServer } from "@main/services/mcp/http";
 import { setOrpheusProtocolRegistered } from "@main/services/orpheus";
 import { setTaskbarThumbnailEnabled } from "@main/services/thumbnail";
+import { getUpdateState, syncUpdateChannel } from "@main/services/updater";
+import { UPDATE_CHANNELS } from "@shared/types/settings";
+import { refreshPowerBlocker } from "@main/utils/powerBlocker";
 
-/** 配置写入后的副作用 */
+/**
+ * 应用配置写入后的副作用
+ * @param keyPath - 配置路径
+ * @param value - 新值
+ */
 const applyConfigChange = (keyPath: string, value: unknown): void => {
   switch (keyPath) {
+    case "player.keepScreenAwake":
+      refreshPowerBlocker();
+      break;
+    case "update.channel":
+      syncUpdateChannel();
+      break;
     case "media.systemMediaControls":
       value ? enableMedia() : disableMedia();
       break;
@@ -61,6 +75,12 @@ const applyConfigChange = (keyPath: string, value: unknown): void => {
       break;
     case "player.equalizer.preamp":
       setPreampGain(value as number);
+      break;
+    case "player.audioOutputMode":
+      // 独占模式仅 Windows 引擎支持；切模式后重建输出立即生效
+      if (isWin) {
+        setExclusiveMode(value === "exclusive");
+      }
       break;
     case "system.taskbarProgress":
       if (!value) setTaskbarProgress(-1);
@@ -125,15 +145,29 @@ const applyConfigChange = (keyPath: string, value: unknown): void => {
 export const registerConfigIpc = (): void => {
   ipcMain.handle("config:get", (_event, keyPath: string) => store.get(keyPath as ConfigPath));
   ipcMain.handle("config:set", (_event, keyPath: string, value: unknown) => {
+    if (keyPath === "update.channel" && getUpdateState().phase === "installing") {
+      throw new Error("安装启动中，无法切换更新通道");
+    }
+    if (keyPath === "update.channel" && !UPDATE_CHANNELS.some((channel) => channel === value)) {
+      throw new Error(`无效的更新通道: ${String(value)}`);
+    }
     store.set(keyPath, value);
     applyConfigChange(keyPath, value);
   });
   ipcMain.handle("config:getAll", () => store.store);
-  ipcMain.handle("config:reset", () => store.clear());
+  ipcMain.handle("config:reset", () => {
+    if (getUpdateState().phase === "installing") throw new Error("安装启动中，无法重置配置");
+    store.clear();
+    syncUpdateChannel();
+    refreshPowerBlocker();
+  });
 
   /** 替换整盘配置 */
   ipcMain.handle("config:replaceAll", (_event, payload: unknown) => {
+    if (getUpdateState().phase === "installing") throw new Error("安装启动中，无法替换配置");
     store.replaceAll(payload);
+    syncUpdateChannel();
+    refreshPowerBlocker();
   });
 
   /** 备份 */

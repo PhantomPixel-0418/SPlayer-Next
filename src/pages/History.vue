@@ -1,4 +1,7 @@
 <script setup lang="ts">
+defineOptions({ name: "History" });
+
+import type { PlaybackContext } from "@shared/types/player";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import { useHistoryStore } from "@/stores/history";
 import SongList from "@/components/list/SongList.vue";
@@ -8,11 +11,17 @@ import IconLucideTrash2 from "~icons/lucide/trash-2";
 const { t } = useI18n();
 const history = useHistoryStore();
 
+const playbackContext = computed<PlaybackContext>(() => ({
+  originId: "history",
+  originType: "page",
+  originName: t("history.title"),
+}));
+
 const searchQuery = ref("");
 
 const handlePlayAll = (): void => {
   if (history.tracks.length === 0) return;
-  player.playFrom(history.tracks, 0);
+  player.playFrom(history.tracks, { context: playbackContext.value });
 };
 
 const clearConfirmOpen = ref(false);
@@ -102,7 +111,9 @@ onMounted(() => {
         <SongList
           :items="history.tracks"
           :search-query="searchQuery"
+          :playback-context="playbackContext"
           :show-size="false"
+          sort-key="history"
           enable-sort
         />
       </div>

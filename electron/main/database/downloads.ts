@@ -1,4 +1,4 @@
-import type { DownloadTask } from "@shared/types/download";
+import type { DownloadTask, DownloadTrackIdentity } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import { getDb } from "./index";
 
@@ -80,6 +80,38 @@ export const listAll = (): DownloadTask[] => {
   return rows.map(toTask);
 };
 
+/**
+ * 精确查询歌曲的已完成文件路径
+ * @param track - 歌曲身份，流媒体需匹配服务器和原始 ID
+ * @returns 按完成时间倒序排列的候选文件路径
+ */
+export const listCompletedPaths = (track: DownloadTrackIdentity): string[] => {
+  const rows = getDb()
+    .prepare(
+      `SELECT file_path FROM download_tasks
+       WHERE status = 'done' AND file_path IS NOT NULL
+         AND json_extract(track_json, '$.source') = ?
+         AND json_extract(track_json, '$.id') = ?
+         AND (? != 'streaming' OR (
+           json_extract(track_json, '$.serverId') = ?
+           AND json_extract(track_json, '$.originalId') = ?
+           AND coalesce(json_extract(track_json, '$.serverRevision'), 0) = ?
+         ))
+       ORDER BY finished_at DESC, created_at DESC, task_id DESC`,
+    )
+    .all(
+      track.source,
+      track.id,
+      track.source,
+      track.serverId ?? null,
+      track.originalId ?? null,
+      track.serverRevision ?? 0,
+    ) as {
+    file_path: string;
+  }[];
+  return rows.map((row) => row.file_path);
+};
+
 /** 列出指定音质的已完成任务（用于重复下载去重） */
 export const listCompletedByQuality = (quality: string): DownloadTask[] => {
   const rows = getDb()
@@ -96,22 +128,6 @@ export const remove = (taskId: string): void => {
 /** 删除全部已结束（非进行中）任务 */
 export const clearFinished = (): void => {
   getDb().prepare("DELETE FROM download_tasks WHERE status NOT IN ('queued','downloading')").run();
-};
-
-/** 仅保留最近 keep 条已结束任务，更旧的删除（限制历史无界增长） */
-export const pruneFinished = (keep: number): void => {
-  getDb()
-    .prepare(
-      `DELETE FROM download_tasks
-       WHERE status NOT IN ('queued','downloading')
-         AND task_id NOT IN (
-           SELECT task_id FROM download_tasks
-           WHERE status NOT IN ('queued','downloading')
-           ORDER BY created_at DESC
-           LIMIT ?
-         )`,
-    )
-    .run(keep);
 };
 
 /** 启动时把残留的进行中任务重置为中断 */

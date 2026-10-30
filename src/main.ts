@@ -9,7 +9,8 @@ import i18n from "./i18n";
 import { useThemeStore } from "./stores/theme";
 import { useSettingsStore } from "./stores/settings";
 import { useHotkeyStore } from "./stores/hotkey";
-import { initPlayer } from "./core/player";
+import { initPlayer, playFiles, restoreLastTrack } from "./core/player";
+import { handleOrpheus } from "./services/orpheus";
 import { installHotkeyManager } from "./core/hotkey/manager";
 import { vRipple } from "./directives/ripple";
 
@@ -35,42 +36,35 @@ watch(
   { immediate: true },
 );
 
-/** splash 笔画动画总时长（ms） */
-const SPLASH_ANIM_MS = 2050;
+/**
+ * 启动播放服务并分发冷启动任务
+ */
+const bootstrapPlayback = async (): Promise<void> => {
+  const pendingAudioFiles = await window.api.system.consumePendingAudioFiles();
+  const pendingOrpheusUrl = await window.api.system.consumePendingProtocolUrl();
 
-/** 标记 splash 定时器是否已触发 */
-let splashTimerFired = false;
-
-/** 移除 splash 层 */
-const removeSplash = (): void => {
-  const el = document.getElementById("app-loading");
-  if (!el) return;
-  el.classList.add("hidden");
-  el.addEventListener("transitionend", () => el.remove(), { once: true });
-};
-
-/** 挂载后移除 */
-const onSplashTimerDone = (): void => {
-  splashTimerFired = true;
-  removeSplash();
-};
-
-// 初始化程序
-router.isReady().then(() => {
-  // 挂载应用
-  app.mount("#app");
-  // 计算剩余时间
-  const elapsed = performance.now() - (window.__splashStart ?? 0);
-  const remaining = Math.max(0, SPLASH_ANIM_MS - elapsed);
-  setTimeout(onSplashTimerDone, remaining);
-  if (!splashTimerFired) {
-    setTimeout(removeSplash, SPLASH_ANIM_MS + 100);
+  if (pendingAudioFiles && pendingAudioFiles.length > 0) {
+    await playFiles(pendingAudioFiles);
+  } else if (pendingOrpheusUrl) {
+    await handleOrpheus(pendingOrpheusUrl);
+  } else {
+    await restoreLastTrack();
   }
-  // 初始化播放器
-  initPlayer().catch(console.error);
-  // 初始化快捷键
+};
+
+/** 挂载首屏并准备播放操作 */
+export const mountApplication = async (): Promise<void> => {
+  await router.isReady();
+  app.mount("#app");
+  await nextTick();
+  await initPlayer();
+};
+
+/** 启动层退出后恢复播放和快捷键 */
+export const startApplication = (): void => {
+  void bootstrapPlayback().catch(console.error);
   useHotkeyStore()
     .init()
     .then(installHotkeyManager)
     .catch((err) => console.error("[hotkey] init failed", err));
-});
+};

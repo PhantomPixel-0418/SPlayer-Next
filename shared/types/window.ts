@@ -2,6 +2,17 @@ import type { DesktopLyricSettings, DynamicIslandSettings, TaskbarLyricSettings 
 
 /** 窗口管理 API */
 export interface WindowApi {
+  /** 静态启动层就绪后显示主窗口 */
+  ready: () => Promise<void>;
+  /** 启动层退出后启动非必要后台服务 */
+  startupComplete: () => Promise<void>;
+  /** 报告无法完成启动的致命错误，由主进程提示并退出 */
+  startupFailed: (error: string) => void;
+  /**
+   * 同步主窗口播放页展开状态
+   * @param expanded - 播放页是否展开
+   */
+  setPlayerExpanded: (expanded: boolean) => void;
   /** 切换桌面歌词窗口 */
   toggleDesktopLyric: () => Promise<boolean>;
   /** 关闭桌面歌词窗口 */
@@ -52,14 +63,22 @@ export interface DesktopLyricApi {
   onConfigChange: (callback: (config: DesktopLyricSettings) => void) => () => void;
   /** 将窗口高度锁定到指定像素 */
   setHeight: (height: number) => Promise<void>;
-  /** 锁定态下切换鼠标穿透 */
-  setMouseIgnore: (ignore: boolean) => void;
+  /** 上报解锁按钮在窗口内容区内的命中区域 */
+  setUnlockButtonBounds: (bounds: DesktopLyricUnlockButtonBounds) => void;
   /** 拖拽移动；只传位置，主进程持有权威尺寸 */
   move: (x: number, y: number) => void;
   /** 拖拽结束后存最终位置；程序 setBounds 不触发 moved 事件，需显式存 */
   saveState: () => void;
   /** 订阅主进程 screen 光标位置判定 */
   onCursorInside: (callback: (inside: boolean) => void) => () => void;
+}
+
+/** 解锁按钮在桌面歌词内容区内的矩形 */
+export interface DesktopLyricUnlockButtonBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** 任务栏歌词布局事件 */

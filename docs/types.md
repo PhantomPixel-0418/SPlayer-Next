@@ -6,14 +6,19 @@
 
 ### Track
 
-一首歌曲的完整信息。控制插件的 [`trackChange`](/plugins/control#监听播放事件) 事件载荷与菜单点击（[`menuClick`](/plugins/control#菜单扩展)）入参的 `track` 均为此对象。
+一首歌曲的完整信息。插件的 [`trackChange`](/plugins/control#events) 事件载荷与菜单点击（[`menuClick`](/plugins/api#menus)）入参的 `track` 均为此对象。
 
 | 字段            | 类型                               | 说明                                  |
 | --------------- | ---------------------------------- | ------------------------------------- |
 | `id`            | `string`                           | 曲目 ID                               |
 | `extId`         | `string?`                          | 二级 ID                               |
 | `source`        | [`TrackSource`](#tracksource)      | 歌曲来源                              |
+| `plugin`        | [插件来源](#plugin-source)`?`      | 独立插件歌曲的来源信息，API 5 新增    |
 | `path`          | `string?`                          | 本地文件路径（仅本地歌曲）            |
+| `cuePath`       | `string?`                          | CUE 文件路径                          |
+| `cueAudioPath`  | `string?`                          | CUE 指向的音频文件路径                |
+| `cueStartMs`    | `number?`                          | CUE 分轨起始时间（毫秒）              |
+| `cueEndMs`      | `number?`                          | CUE 分轨结束时间（毫秒）              |
 | `serverId`      | `string?`                          | 流媒体服务器实例 ID（仅 `streaming`） |
 | `originalId`    | `string?`                          | 流媒体服务器原生 ID（仅 `streaming`） |
 | `title`         | `string`                           | 标题                                  |
@@ -28,16 +33,28 @@
 | `mtime`         | `number?`                          | 修改时间（Unix 毫秒）                 |
 | `ctime`         | `number?`                          | 创建时间（Unix 毫秒）                 |
 | `quality`       | [`AudioQuality`](#audioquality)`?` | 音质信息                              |
-| `fee`           | [`TrackFee`](#trackfee)`?`         | 付费等级                              |
+| `fee`           | [`TrackFee`](#trackfee)`?`         | 付费标记                              |
 | `cloud`         | `boolean?`                         | 是否云盘歌曲                          |
 
 ### TrackSource
 
-歌曲来源：`"local"`（本地文件）、`"streaming"`（流媒体服务器），或一个在线音源标识（由音源插件提供）。
+歌曲来源：`"local"`（本地文件）、`"streaming"`（流媒体服务器）、`"plugin"`（独立插件来源），或内置在线平台 `"netease"`、`"qqmusic"`、`"kugou"`。
+
+### 插件来源 {#plugin-source}
+
+`source` 为 `"plugin"` 时，`plugin` 必填，由宿主根据[搜索候选](/plugins/source#musicsearch)生成。
+
+| 字段        | 类型        | 说明                                             |
+| ----------- | ----------- | ------------------------------------------------ |
+| `pluginId`  | `string`    | 所属插件的 `@id`                                 |
+| `source`    | `string`    | 插件注册的 source key                            |
+| `musicInfo` | `Candidate` | 原始搜索候选，包含源内歌曲 ID 和后续取数所需字段 |
+
+宿主生成唯一的 `Track.id`，原始歌曲 ID 保存在 `plugin.musicInfo.id`。播放或加入队列时传递完整 `Track` 并保留 `plugin` 字段，队列恢复和后续解析依赖这些信息。
 
 ### TrackFee
 
-付费等级：`0` 免费、`1` VIP、`2` 需购买（数字专辑等）。
+付费标记：`0` 免费、`1` VIP、`4` 需购买（数字专辑等）、`8` 受限音质。
 
 ### Artist
 
@@ -73,17 +90,18 @@
 
 ### LyricLine
 
-一行歌词。控制插件的 [`lyricChange`](/plugins/control#监听播放事件) 事件载荷 `lines` 即 `LyricLine[]`。
+一行歌词。插件的 [`lyricChange`](/plugins/control#events) 事件载荷 `lines` 即 `LyricLine[]`。
 
-| 字段              | 类型                        | 说明                                           |
-| ----------------- | --------------------------- | ---------------------------------------------- |
-| `words`           | [`LyricWord[]`](#lyricword) | 该行逐字内容；逐行（LRC 类）格式时只有一个元素 |
-| `translatedLyric` | `string`                    | 翻译，无则为空串                               |
-| `romanLyric`      | `string`                    | 音译 / 罗马音，无则为空串                      |
-| `startTime`       | `number`                    | 行起始时间（毫秒）                             |
-| `endTime`         | `number`                    | 行结束时间（毫秒）                             |
-| `isBG`            | `boolean`                   | 是否为背景和声行                               |
-| `isDuet`          | `boolean`                   | 是否为对唱行（通常右对齐显示）                 |
+| 字段              | 类型                                     | 说明                                           |
+| ----------------- | ---------------------------------------- | ---------------------------------------------- |
+| `words`           | [`LyricWord[]`](#lyricword)              | 该行逐字内容；逐行（LRC 类）格式时只有一个元素 |
+| `translatedLyric` | `string`                                 | 翻译，无则为空串                               |
+| `romanLyric`      | `string`                                 | 音译 / 罗马音，无则为空串                      |
+| `startTime`       | `number`                                 | 行起始时间（毫秒）                             |
+| `endTime`         | `number`                                 | 行结束时间（毫秒）                             |
+| `isBG`            | `boolean`                                | 是否为背景和声行                               |
+| `isDuet`          | `boolean`                                | 是否为对唱行（通常右对齐显示）                 |
+| `language`        | `"ja" \| "ko" \| "zh-CN" \| "und-Latn"?` | 主歌词语言，用于字形选择与 HTML `lang`         |
 
 整行纯文本：`line.words.map((word) => word.word).join("")`。逐行歌词的逐字时间通常与行时间一致，不必关心 `words` 内部时间。
 

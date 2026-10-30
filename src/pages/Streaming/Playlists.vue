@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: "StreamingPlaylists" });
+
 import type { CoverItem } from "@/types/artist";
 import { useStreamingStore } from "@/stores/streaming";
 import { navigateToPlaylist } from "@/utils/navigate";
@@ -28,8 +30,16 @@ const items = computed<CoverItem[]>(() =>
   })),
 );
 
+/**
+ * 打开当前服务器的歌单
+ * @param item - 歌单封面条目
+ */
 const handleClick = (item: CoverItem): void => {
-  navigateToPlaylist(item.id, { source: "streaming", name: item.title });
+  navigateToPlaylist(item.id, {
+    source: "streaming",
+    name: item.title,
+    serverId: streaming.activeServerId ?? undefined,
+  });
 };
 </script>
 

@@ -8,6 +8,7 @@
  */
 
 import { QM_HEADERS, formatSingerName } from "../core/config";
+import type { QMSong } from "@shared/types/platform/qqmusic";
 import type { QMModule } from "../core/types";
 
 interface CdSongItem {
@@ -18,6 +19,16 @@ interface CdSongItem {
   singer?: Array<{ name?: string; mid?: string }>;
   albumname?: string;
   albummid?: string;
+  strMediaMid?: string;
+  pay?: {
+    payalbum?: number;
+    payplay?: number;
+  };
+  size128?: number;
+  size320?: number;
+  sizeape?: number;
+  sizeflac?: number;
+  sizeogg?: number;
 }
 
 interface CdListResp {
@@ -37,6 +48,11 @@ interface CdListResp {
 const SONGLIST_URL =
   "https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysonglist=0&platform=yqq&needNewCode=0";
 
+/**
+ * 获取 QM 歌单并转换为共享歌曲结构
+ * @param params - 包含歌单 ID 的请求参数
+ * @returns 歌单资料与歌曲列表
+ */
 const songList: QMModule = async (params) => {
   const { id } = params;
 
@@ -56,7 +72,7 @@ const songList: QMModule = async (params) => {
   const cd = data.cdlist?.[0];
   if (!cd) return { code: 404, message: "歌单不存在" };
 
-  const songs = (cd.songlist ?? []).map((item) => ({
+  const songs: QMSong[] = (cd.songlist ?? []).map((item) => ({
     id: String(item.songid ?? ""),
     mid: item.songmid ?? "",
     name: item.songname ?? "",
@@ -65,6 +81,13 @@ const songList: QMModule = async (params) => {
     album: item.albumname ?? "",
     albumMid: item.albummid ?? "",
     duration: (item.interval ?? 0) * 1000,
+    mediaMid: item.strMediaMid ?? "",
+    pay: item.pay,
+    size128: item.size128 ?? 0,
+    size320: item.size320 ?? 0,
+    sizeApe: item.sizeape ?? 0,
+    sizeFlac: item.sizeflac ?? 0,
+    sizeOgg: item.sizeogg ?? 0,
   }));
 
   return {

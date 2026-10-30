@@ -12,15 +12,9 @@ import { useImmersiveMode } from "@/composables/useImmersiveMode";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { useProgressLyric } from "@/composables/useProgressLyric";
 import Lyrics from "@/components/player/Lyrics/index.vue";
-import AMLLLyrics from "@/components/player/Lyrics/AMLLLyrics.vue";
-import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
-import { openExternal } from "@/utils/url";
-import IconFavorite from "~icons/material-symbols/favorite-rounded";
-import IconFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
-import IconLucideListPlus from "~icons/lucide/list-plus";
-import IconLucideDownload from "~icons/lucide/download";
+import { playerTransitionActive, setPlayerExpanded } from "@/services/playerTransition";
 
 const status = useStatusStore();
 const media = useMediaStore();
@@ -44,11 +38,17 @@ const {
 const { timeDisplay, toggleTimeFormat } = useTimeFormat();
 const { snapToNearestLyric } = useProgressLyric();
 
-const lyricRef = ref<InstanceType<typeof Lyrics> | InstanceType<typeof AMLLLyrics>>();
+const lyricRef = ref<InstanceType<typeof Lyrics>>();
 const lyricMounted = ref(false);
+const lyricReady = ref(false);
+const playerVisible = ref(false);
+const visualizerMounted = ref(false);
 const initialLyricTimeMs = ref(0);
+let visualizerIdle = 0;
+let enterPrepared = false;
+const visibility = useDocumentVisibility();
 
-/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白。 */
+/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白 */
 const displayTrack = computed(() => media.track ?? status.currentTrack);
 const hasLyric = computed(() => media.parsedLyric.length > 0 || media.lyricLoading);
 const hasTrack = computed(() => !!displayTrack.value);
@@ -60,32 +60,113 @@ const { start: startTick, stop: stopTick } = usePlaybackTime((currentMs) => {
   }
 });
 
-/** 展开后 */
-const onAfterEnter = () => {
+/** 歌词首帧就绪后在空闲时段创建可视化，避免布局测量与 WebGL 初始化争抢一帧 */
+const scheduleVisualizers = (): void => {
+  if (
+    visualizerIdle ||
+    visualizerMounted.value ||
+    playerTransitionActive.value ||
+    !isPlayerExpanded.value ||
+    visibility.value !== "visible"
+  ) {
+    return;
+  }
+  visualizerIdle = requestIdleCallback(
+    () => {
+      visualizerIdle = 0;
+      if (
+        isPlayerExpanded.value &&
+        !playerTransitionActive.value &&
+        visibility.value === "visible"
+      ) {
+        visualizerMounted.value = true;
+      }
+    },
+    { timeout: 500 },
+  );
+};
+
+/** 歌词完成首次布局后安排可视化初始化 */
+const onLyricReady = (): void => {
+  if (!isPlayerExpanded.value) return;
+  lyricReady.value = true;
+  scheduleVisualizers();
+};
+
+watch(visibility, (value) => {
+  if (value === "visible" && lyricReady.value) scheduleVisualizers();
+});
+
+/** 每次展开只初始化一次歌词，复用已挂载内容处理快速收起再展开 */
+const preparePlayerContent = (): void => {
+  if (enterPrepared) return;
+  enterPrepared = true;
   initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
   lyricMounted.value = true;
   nextTick(() => {
+    if (!isPlayerExpanded.value) return;
+    lyricRef.value?.setCurrentTime(getCurrentTime() + status.lyricOffsetMs);
     lyricRef.value?.resume();
     startTick();
+    if (lyricReady.value) scheduleVisualizers();
+    else if (!hasLyric.value) onLyricReady();
   });
 };
 
-/** 收起前 */
+/** 展开前仅显示静态背景与封面 */
+const onBeforeEnter = (): void => {
+  playerVisible.value = true;
+  enterPrepared = false;
+};
+
+/** 普通过渡完成后准备内容，共享过渡由快照结束驱动 */
+const onAfterEnter = (): void => {
+  if (!isPlayerExpanded.value || playerTransitionActive.value) return;
+  preparePlayerContent();
+};
+
+watch(
+  playerTransitionActive,
+  (active, previous, onCleanup) => {
+    if (active || !previous || !isPlayerExpanded.value) return;
+    // 动画结束后再加载歌词引擎，避免解析抢占动画帧
+    const idle = requestIdleCallback(
+      () => {
+        if (!playerTransitionActive.value && isPlayerExpanded.value) preparePlayerContent();
+      },
+      { timeout: 300 },
+    );
+    onCleanup(() => cancelIdleCallback(idle));
+  },
+  { immediate: true },
+);
+
+/** 收起前取消可视化初始化并冻结歌词 */
 const onBeforeLeave = () => {
+  cancelIdleCallback(visualizerIdle);
+  visualizerIdle = 0;
   lyricRef.value?.freeze();
   stopTick();
 };
 
-/** 收起后 */
+/** 收起结束后卸载歌词与可视化 */
 const onAfterLeave = () => {
+  playerVisible.value = false;
   lyricMounted.value = false;
+  lyricReady.value = false;
+  visualizerMounted.value = false;
 };
 
-// 重新挂载时，刷新初始时间
+onBeforeUnmount(() => cancelIdleCallback(visualizerIdle));
+
+// 重新挂载时，刷新初始时间；加载结束仍无歌词时歌词组件会卸载，按就绪处理
 watch(hasLyric, (value) => {
-  if (value && lyricMounted.value) {
+  if (!lyricMounted.value) return;
+  if (value) {
     initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
+    return;
   }
+  onLyricReady();
 });
 
 // 歌词变化时先推送精确时间
@@ -107,6 +188,7 @@ watch(
 );
 
 const fullscreenCover = computed(() => settings.player.coverLayout === "fullscreen");
+const coverWidth = computed(() => `${settings.player.coverLyricRatio * 100}%`);
 
 const coverCentered = computed(() => {
   if (fullscreenCover.value || status.fullQueueOpen) return false;
@@ -118,17 +200,18 @@ const handleLyricSeek = async (timeMs: number): Promise<void> => {
   if (!isPlaying.value) await player.play();
 };
 
-const springConfig = computed(() => ({
-  mass: settings.lyric.springMass,
-  damping: settings.lyric.springDamping,
-  stiffness: settings.lyric.springStiffness,
-}));
-
 const lyricFontSize = computed(() =>
   settings.lyric.adaptiveFontSize
     ? `calc(${settings.lyric.fontSize} / 1080 * 100vh)`
     : `${settings.lyric.fontSize}px`,
 );
+
+const lyricSubFontSize = computed(() => {
+  if (settings.lyric.translationFontSizeFollowMain) return "max(0.5em, 12px)";
+  return settings.lyric.adaptiveFontSize
+    ? `max(12px, calc(${settings.lyric.translationFontSize} / 1080 * 100vh))`
+    : `${settings.lyric.translationFontSize}px`;
+});
 
 const { immersive, onPlayerMouseEnter, onPlayerMouseLeave, onMainMove, onBarEnter, onBarLeave } =
   useImmersiveMode(isPlayerExpanded);
@@ -139,6 +222,7 @@ const canDownload = computed(
   () =>
     !!displayTrack.value &&
     displayTrack.value.source !== "local" &&
+    displayTrack.value.source !== "plugin" &&
     settings.system.download.enabled,
 );
 
@@ -149,10 +233,6 @@ const downloadQualityItems = computed(() =>
 const onDownloadSelect = (key: string): void => {
   if (!displayTrack.value) return;
   void enqueueDownload(displayTrack.value, key ? { quality: key as QualityLevel } : {});
-};
-
-const collapse = (): void => {
-  isPlayerExpanded.value = false;
 };
 
 const onSeekDragEnd = (value: number): void => {
@@ -188,31 +268,34 @@ const showComments = (): void => {
 <template>
   <Teleport to="body">
     <Transition
+      appear
+      :css="!playerTransitionActive"
       enter-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       leave-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       enter-from-class="translate-y-full"
       leave-to-class="translate-y-full"
       @after-enter="onAfterEnter"
+      @before-enter="onBeforeEnter"
       @before-leave="onBeforeLeave"
       @after-leave="onAfterLeave"
     >
       <div
         v-show="isPlayerExpanded"
-        class="fixed inset-0 z-200 overflow-hidden text-cover"
+        class="player-panel fixed inset-0 z-200 overflow-hidden text-cover"
         :class="immersive ? 'cursor-none [&_*]:!cursor-none' : ''"
         style="--lp-color: rgb(var(--s-cover))"
         @mouseenter="onPlayerMouseEnter"
         @mouseleave="onPlayerMouseLeave"
       >
         <!-- 背景 -->
-        <PlayerBackground />
+        <PlayerBackground :visible="playerVisible" :active="visualizerMounted" />
         <!-- 全屏封面 -->
         <div v-if="fullscreenCover" class="absolute inset-y-0 left-0 w-[60%]">
           <PlayerCover fullscreen />
         </div>
         <!-- 底部频谱 -->
         <BottomSpectrum
-          v-if="isPlayerExpanded && settings.player.enableSpectrum"
+          v-if="isPlayerExpanded && visualizerMounted && settings.player.enableSpectrum"
           :show="isPlaying && immersive"
         />
         <!-- 顶/底栏渐变遮罩（全屏封面模式） -->
@@ -261,8 +344,11 @@ const showComments = (): void => {
           <!-- 左侧 -->
           <div
             v-if="!fullscreenCover"
-            class="absolute inset-y-0 left-0 w-[45%] flex items-center justify-center px-12 transition-transform duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            :style="coverCentered ? 'transform: translateX(calc(100% * 11 / 18))' : undefined"
+            class="absolute inset-y-0 left-0 flex items-center justify-center px-12 transition-transform duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            :style="{
+              width: coverWidth,
+              transform: coverCentered ? 'translateX(calc(50vw - 50%))' : undefined,
+            }"
           >
             <div class="relative w-[clamp(200px,85%,50vh)] -translate-y-[11vh]">
               <Transition name="scale-switch" mode="out-in">
@@ -278,12 +364,12 @@ const showComments = (): void => {
           <!-- 右侧 -->
           <div
             class="group absolute inset-y-0 right-0 pr-20 flex flex-col transition-opacity duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            :class="[
-              fullscreenCover ? 'w-1/2' : 'w-[55%]',
+            :class="
               coverCentered || status.fullQueueOpen
                 ? 'opacity-0 pointer-events-none'
-                : 'opacity-100',
-            ]"
+                : 'opacity-100'
+            "
+            :style="{ width: fullscreenCover ? '50%' : `calc(100% - ${coverWidth})` }"
           >
             <!-- 全屏封面 -->
             <div
@@ -297,7 +383,9 @@ const showComments = (): void => {
             <div
               class="lyric-area relative flex-1 min-h-0"
               :style="{
+                '--lp-credit-opacity': '1',
                 fontSize: lyricFontSize,
+                '--lp-sub-font-size': lyricSubFontSize,
                 fontWeight: String(settings.lyric.fontWeight),
                 fontFamily: settings.lyric.fontFamily || undefined,
                 '--lyric-font-zh': settings.lyric.fontFamilyChinese || undefined,
@@ -307,70 +395,15 @@ const showComments = (): void => {
                 mixBlendMode: settings.lyric.lyricBlendMode,
               }"
             >
-              <AMLLLyrics
-                v-if="lyricMounted && hasLyric && settings.lyric.engine === 'amll'"
-                ref="lyricRef"
-                :lyric-lines="media.parsedLyric"
-                :initial-time="initialLyricTimeMs"
-                :playing="isPlaying"
-                :align-position="settings.lyric.alignPosition"
-                :word-fade-width="settings.lyric.wordFadeWidth"
-                :hide-passed-lines="settings.lyric.hidePassedLines"
-                :enable-blur="settings.lyric.enableBlur"
-                :show-translation="settings.lyric.showTranslation"
-                :show-line-romanization="settings.lyric.amllShowLineRomanization"
-                :show-word-romanization="settings.lyric.amllShowWordRomanization"
-                @seek="handleLyricSeek"
-              >
-                <template #bottom>
-                  <div v-if="media.lyricAuthors.length > 0" class="lyric-credit-line">
-                    <span class="lyric-credit-prefix">{{ $t("player.lyricCredit") }}</span>
-                    <template v-for="(author, idx) in media.lyricAuthors" :key="author">
-                      <span v-if="idx > 0" class="mx-1">,</span>
-                      <span
-                        class="lp-content lyric-credit"
-                        @click.stop="openExternal(`https://github.com/${author}`)"
-                      >
-                        {{ "@" + author }}
-                      </span>
-                    </template>
-                  </div>
-                </template>
-              </AMLLLyrics>
               <Lyrics
-                v-else-if="lyricMounted && hasLyric"
+                v-if="lyricMounted && hasLyric"
                 ref="lyricRef"
                 :lyric-lines="media.parsedLyric"
                 :initial-time="initialLyricTimeMs"
                 :playing="isPlaying"
-                :align-position="settings.lyric.alignPosition"
-                :word-fade-width="settings.lyric.wordFadeWidth"
-                :spring-config="springConfig"
-                :inactive-alpha="settings.lyric.inactiveAlpha"
-                :hide-passed-lines="settings.lyric.hidePassedLines"
-                :enable-blur="settings.lyric.enableBlur"
-                :enable-word-highlight="settings.lyric.enableWordHighlight"
-                :enable-float-animation="settings.lyric.enableFloatAnimation"
-                :enable-emphasize-effect="settings.lyric.enableEmphasizeEffect"
-                :show-translation="settings.lyric.showTranslation"
-                :show-romanization="settings.lyric.showRomanization"
                 @seek="handleLyricSeek"
-              >
-                <template #bottom>
-                  <div v-if="media.lyricAuthors.length > 0" class="lyric-credit-line">
-                    <span class="lyric-credit-prefix">{{ $t("player.lyricCredit") }}</span>
-                    <template v-for="(author, idx) in media.lyricAuthors" :key="author">
-                      <span v-if="idx > 0" class="mx-1">,</span>
-                      <span
-                        class="lp-content lyric-credit"
-                        @click.stop="openExternal(`https://github.com/${author}`)"
-                      >
-                        {{ "@" + author }}
-                      </span>
-                    </template>
-                  </div>
-                </template>
-              </Lyrics>
+                @ready="onLyricReady"
+              />
               <div
                 v-else-if="lyricMounted"
                 class="w-full h-full flex items-center justify-center text-cover/30"
@@ -384,10 +417,8 @@ const showComments = (): void => {
           <!-- 播放队列 -->
           <div
             class="absolute inset-y-0 right-0 pl-4 py-6 flex items-center"
-            :class="[
-              fullscreenCover ? 'w-1/2' : 'w-[55%]',
-              status.fullQueueOpen ? '' : 'pointer-events-none',
-            ]"
+            :class="status.fullQueueOpen ? '' : 'pointer-events-none'"
+            :style="{ width: fullscreenCover ? '50%' : `calc(100% - ${coverWidth})` }"
           >
             <Transition
               enter-active-class="transition-opacity duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
@@ -409,21 +440,28 @@ const showComments = (): void => {
           @mouseleave="onBarLeave"
         >
           <div class="flex-1 min-w-0 flex items-center justify-start gap-2">
-            <SButton type="cover" variant="ghost" size="large" circle @click="collapse">
-              <template #icon><IconLucideChevronDown /></template>
-            </SButton>
             <SButton
               type="cover"
               variant="ghost"
               size="large"
               circle
-              :disabled="!hasTrack"
+              @click="setPlayerExpanded(false)"
+            >
+              <template #icon><IconLucideChevronDown /></template>
+            </SButton>
+            <SButton
+              v-if="displayTrack?.source !== 'plugin'"
+              type="cover"
+              variant="ghost"
+              size="large"
+              circle
+              :disabled="!hasTrack || !fav.isSupported(displayTrack)"
               @click="fav.toggle(displayTrack)"
             >
               <template #icon>
                 <SIconSwap :active="fav.isLiked(displayTrack)">
-                  <template #on><IconFavorite /></template>
-                  <template #off><IconFavoriteOutline /></template>
+                  <template #on><IconMaterialSymbolsFavoriteRounded /></template>
+                  <template #off><IconMaterialSymbolsFavoriteOutlineRounded /></template>
                 </SIconSwap>
               </template>
             </SButton>
@@ -541,6 +579,7 @@ const showComments = (): void => {
               </span>
               <SSlider
                 :model-value="position"
+                :glow="status.transitioning"
                 :min="0"
                 :max="duration"
                 :step="100"
@@ -608,19 +647,5 @@ const showComments = (): void => {
     rgba(0, 0, 0, 0.04) 85%,
     rgba(0, 0, 0, 0) 100%
   );
-}
-
-.lyric-credit-line {
-  font-size: max(0.5em, 10px);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  text-align: left;
-  width: 100%;
-}
-
-.lyric-credit {
-  margin-left: 0.5em;
 }
 </style>

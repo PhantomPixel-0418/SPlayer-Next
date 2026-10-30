@@ -1,5 +1,5 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
-import { PlayerApi, TrackSource } from "@shared/types/player";
+import { PlayerApi, Track, TrackSource } from "@shared/types/player";
 import {
   ConfigApi,
   ExternalApiStatus,
@@ -22,6 +22,7 @@ import {
 } from "@shared/types/window";
 import { HotkeyApi } from "@shared/types/hotkey";
 import { StreamingApi } from "@shared/types/streaming";
+import { RecognitionApi } from "@shared/types/recognition";
 import { LastfmApi } from "@shared/types/lastfm";
 import { IpcResponse } from "@shared/types/player";
 import { StatsApi } from "@shared/types/stats";
@@ -30,6 +31,8 @@ import { CloudUploadApi } from "@shared/types/cloudUpload";
 import { CommentsApi } from "@shared/types/comment";
 import { AiModelApi } from "@shared/types/ai";
 import { PlaylistApi } from "@shared/types/playlist";
+import { OpenccApi } from "@shared/types/opencc";
+import type { AutoMixApi } from "@shared/types/automix";
 
 declare global {
   interface Window {
@@ -37,6 +40,7 @@ declare global {
     api: {
       config: ConfigApi;
       player: PlayerApi;
+      automix: AutoMixApi;
       system: {
         installType: "nsis" | "portable" | "appx" | "dmg" | "appimage";
         platform: NodeJS.Platform;
@@ -47,6 +51,7 @@ declare global {
         };
         toggleDevTools: () => Promise<void>;
         showInExplorer: (filePath: string) => Promise<void>;
+        copyTrackFile: (track: Track) => Promise<boolean>;
         openLogsDir: () => Promise<string>;
         setLocale: (locale: LocaleCode) => void;
         focusMainWindow: () => Promise<void>;
@@ -64,6 +69,9 @@ declare global {
         testNetworkProxy: () => Promise<boolean>;
         onProtocolUrl: (callback: (url: string) => void) => () => void;
         consumePendingProtocolUrl: () => Promise<string | null>;
+        onOpenFiles: (callback: (files: string[]) => void) => () => void;
+        consumePendingAudioFiles: () => Promise<string[]>;
+        getPathForFile: (file: File) => string;
       };
       library: LibraryApi;
       playlist: PlaylistApi;
@@ -76,6 +84,7 @@ declare global {
       apis: ApisApi;
       cloud: CloudUploadApi;
       lyrics: LyricsApi;
+      opencc: OpenccApi;
       comments: CommentsApi;
       download: DownloadApi;
       theme: {
@@ -91,10 +100,19 @@ declare global {
         resetDir: () => Promise<string>;
         song: {
           lookup: (cacheKey: string) => Promise<string | null>;
+          /**
+           * 下载歌曲到缓存并按预载消费者保留文件
+           * @param cacheKey - 音源与音质对应的缓存键
+           * @param source - 歌曲来源
+           * @param streamUrl - 下载地址
+           * @param preloadId - 可选的预载消费者标识，用于租约保留和独立取消
+           * @returns 缓存文件路径，失败或取消时返回 null
+           */
           fetch: (
             cacheKey: string,
             source: TrackSource,
             streamUrl: string,
+            preloadId?: string,
           ) => Promise<string | null>;
           cancel: (cacheKey: string) => Promise<void>;
         };
@@ -102,6 +120,7 @@ declare global {
       stats: StatsApi;
       hotkey: HotkeyApi;
       streaming: StreamingApi;
+      recognition: RecognitionApi;
       lastfm: LastfmApi;
       externalApi: {
         restart: () => Promise<ExternalApiStatus>;

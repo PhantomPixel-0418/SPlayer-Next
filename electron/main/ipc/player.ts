@@ -1,7 +1,16 @@
-import { readFile } from "node:fs/promises";
+import {
+  prepareNextTrack,
+  cancelPreparedTrack,
+  takeTransitionReady,
+  setCurrentTransitionRange,
+  getTransitionEndMs,
+  getPreparedAutoMixPlan,
+  installPreparedAutoMixStems,
+} from "@main/services/playerPreload";
 import { extname } from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
 import { sendToMain } from "@main/utils/broadcast";
+import { readFileAutoEncoding } from "@main/utils/encoding";
 import { wsBroadcast } from "@main/server/broadcast";
 import { toCacheUrl } from "@main/utils/protocol";
 import { toMs } from "@main/utils/time";
@@ -9,9 +18,18 @@ import * as mediaService from "@main/services/media";
 import * as nowPlaying from "@main/services/nowPlaying";
 import * as lastfm from "@main/services/lastfm";
 import * as neteaseScrobble from "@main/services/neteaseScrobble";
+import * as streamingPlayback from "@main/services/streaming/playback";
+import { invalidateStreamingSession } from "@main/services/streaming/adapters/resolve";
 import { fetchBytes } from "@main/utils/fetchBytes";
-import { getPlayer, resetPlayer, onPlayerCreated } from "@main/services/engine";
-import { startDevicePolling, stopDevicePolling } from "@main/services/device";
+import { getPlayer, resetPlayer, onPlayerCreated, onPlayerReset } from "@main/services/engine";
+import { playerControl } from "@main/services/playerControl";
+import {
+  cancelPendingReinit,
+  setPauseOnDeviceSwitch,
+  startDeviceMonitoring,
+  stopDeviceMonitoring,
+  requestReinit,
+} from "@main/services/device";
 import { getThumbar } from "@main/services/thumbar";
 import {
   setTraySongName,
@@ -24,12 +42,24 @@ import { getMainWindow, setTaskbarProgress } from "@main/window";
 import { store } from "@main/store";
 import { appName, getSongCacheDir } from "@main/utils/config";
 import * as songCache from "@main/services/songCache";
-import { parseArtists, parseAlbum, formatArtists } from "@main/utils/metadata";
+import { parseArtists, parseAlbum, formatArtists, artistNames } from "@main/utils/metadata";
 import { playerLog } from "@main/utils/logger";
+import { updatePowerBlocker, releasePowerBlocker } from "@main/utils/powerBlocker";
 import { ErrorCode } from "@shared/types/errors";
-import type { LoadOptions, RepeatMode, ShuffleMode, PlayerState } from "@shared/types/player";
-import type { MediaEvent } from "@main/services/media";
+import type {
+  Artist,
+  LoadOptions,
+  RepeatMode,
+  ShuffleMode,
+  PlayerState,
+  TransitionPreference,
+  PreparedTrackResult,
+} from "@shared/types/player";
+import type { MediaEvent } from "@splayer/media-ctrl";
 import { JsPlayerEvent } from "@splayer/audio-engine";
+import type { JsMusicMetadata } from "@splayer/audio-engine";
+import type { AutoMixPrepareOptions, TransitionMode } from "@shared/types/automix";
+import { canAutoMix } from "@main/services/automix/planner";
 
 type AudioEngineModule = typeof import("@splayer/audio-engine");
 
@@ -69,18 +99,45 @@ const fail = (code: ErrorCode, error?: unknown) => {
   return { success: false as const, error: code };
 };
 
+/** 判断原生错误是否为设备错误 */
+const isNativeDeviceError = (error: unknown): boolean => String(error).includes("[Device]");
+const isNativeSourceNotFoundError = (error: unknown): boolean =>
+  String(error).includes("[SourceNotFound]");
+const isNativeNetworkError = (error: unknown): boolean =>
+  String(error).includes("[NetworkUnreachable]");
+const isNativeCancelledError = (error: unknown): boolean => String(error).includes("[Cancelled]");
+
+/** 根据原生错误特征和音源类型，将异常分类为标准 ErrorCode */
+const classifyLoadError = (error: unknown, source: string): ErrorCode => {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (isNativeCancelledError(error)) {
+    return ErrorCode.LOAD_SUPERSEDED;
+  }
+  if (isNativeDeviceError(error) || /output device|NoDevice|DeviceNotAvailable/i.test(msg)) {
+    return ErrorCode.DEVICE_NOT_FOUND;
+  }
+  if (isNativeSourceNotFoundError(error)) {
+    return ErrorCode.FILE_NOT_FOUND;
+  }
+  if (msg.includes("[DecodeFailed]")) {
+    return ErrorCode.FILE_DECODE_ERROR;
+  }
+  if (isNativeNetworkError(error) || /^https?:\/\//i.test(source)) {
+    return ErrorCode.NETWORK_ERROR;
+  }
+  return ErrorCode.FILE_DECODE_ERROR;
+};
+
 /**
  * 播放器原生事件回调
- * @param inst 播放器实例
+ * @param inst - 播放器实例
  */
 const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"]>): void => {
-  // 自动重建输出的冷却时间戳
-  let lastReinitAt = 0;
-  const REINIT_COOLDOWN_MS = 5000;
   inst.onEvent((event: JsPlayerEvent) => {
     switch (event.type) {
       case "stateChanged": {
         const state = (event.state ?? "idle") as PlayerState;
+        updatePowerBlocker(state);
         // 更新缩略图工具栏和托盘菜单
         getThumbar()?.updateThumbar(state === "playing");
         setTrayPlayState(state === "playing" ? "playing" : "paused");
@@ -100,6 +157,7 @@ const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"
         nowPlaying.onPlayStateChange(state);
         lastfm.onState(state === "playing");
         neteaseScrobble.onState(state === "playing");
+        streamingPlayback.onStreamingState(state);
         const statusEvent = {
           type: "status",
           data: {
@@ -107,6 +165,7 @@ const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"
             position: toDisplayPositionMs(toMs(inst.getPosition())),
             duration: toDisplayDurationMs(toMs(inst.getDuration())),
             volume: inst.getVolume(),
+            speed: inst.getSpeed(),
             isFinished: false,
           },
         };
@@ -115,25 +174,43 @@ const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"
         break;
       }
       case "ended": {
+        updatePowerBlocker("stopped");
         sendToMain("player:event", { type: "ended" });
         wsBroadcast({ type: "ended" });
         mediaService.setPlayState({ status: "Paused" });
         lastfm.onEnded();
         neteaseScrobble.onEnded();
+        void streamingPlayback.stopStreamingPlayback();
         setTaskbarProgress(-1);
         break;
       }
       case "sourceError": {
+        updatePowerBlocker("stopped");
         // 音源失效（网络中断 / URL 过期）
         sendToMain("player:event", { type: "sourceError" });
         mediaService.setPlayState({ status: "Paused" });
         neteaseScrobble.onState(false);
+        void streamingPlayback.stopStreamingPlayback();
         setTaskbarProgress(-1);
         break;
       }
       case "position": {
         const posMs = toDisplayPositionMs(toMs(event.position ?? 0));
         const durMs = toDisplayDurationMs(toMs(event.duration ?? 0));
+        const endPosition = toDisplayPositionMs(
+          getTransitionEndMs(
+            activeCueRange ? activeCueRange.startMs + durMs : durMs,
+            toMs(event.position ?? 0),
+            inst.getSpeed(),
+          ),
+        );
+        const readyId = takeTransitionReady(endPosition - posMs, inst.getSpeed(), inst.getPitch());
+        if (readyId) {
+          sendToMain("player:event", {
+            type: "transitionReady",
+            data: { id: readyId, position: posMs, endPosition },
+          });
+        }
         const positionEvent = {
           type: "position",
           data: { position: posMs, duration: durMs },
@@ -145,7 +222,31 @@ const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"
         nowPlaying.onPosition(posMs, true);
         lastfm.onPosition();
         neteaseScrobble.onPosition(posMs);
+        streamingPlayback.onStreamingPosition(posMs);
         if (store.get("system.taskbarProgress") && durMs > 0) setTaskbarProgress(posMs / durMs);
+        break;
+      }
+      case "transitionChanged": {
+        if (event.transitionActive) {
+          playerLog.info("曲尾交接点识别", {
+            reason:
+              event.transitionReason === "quiet"
+                ? "持续低能量"
+                : event.transitionReason === "planned"
+                  ? "AutoMix 计划落点"
+                  : "最迟交接边界",
+            plannedFadeSeconds: event.transitionFadeSeconds,
+          });
+        }
+        const transitionEvent = {
+          type: "transition",
+          data: {
+            active: event.transitionActive ?? false,
+            mode: event.transitionMode === "automix" ? "automix" : "crossfade",
+          },
+        } as const;
+        sendToMain("player:event", transitionEvent);
+        wsBroadcast(transitionEvent);
         break;
       }
       case "fftData": {
@@ -154,39 +255,317 @@ const registerNativeEvents = (inst: InstanceType<AudioEngineModule["AudioPlayer"
         wsBroadcast(fftEvent);
         break;
       }
+      case "outputFailed": {
+        // 运行期流错误（CPAL/Rodio），重建输出流恢复播放
+        playerLog.warn("检测到音频输出流错误，触发恢复");
+        requestReinit(inst);
+        break;
+      }
       case "outputStalled": {
-        const now = Date.now();
-        if (now - lastReinitAt < REINIT_COOLDOWN_MS) break;
-        lastReinitAt = now;
-        playerLog.warn("检测到音频输出停滞，自动重建");
-        inst.reinitOutput().catch((error) => {
-          playerLog.error("自动重建音频输出失败:", error);
-        });
+        // 看门狗：无流错误但长期未消费样本
+        playerLog.warn("检测到音频输出停滞，触发恢复");
+        requestReinit(inst);
+        break;
+      }
+      case "outputFallback": {
+        // 独占模式打开失败已自动回退共享模式，转发原因给渲染端提示
+        const reason = event.reason ?? "unavailable";
+        playerLog.warn(`独占模式不可用，已回退共享模式: ${reason}`);
+        sendToMain("player:event", { type: "outputFallback", data: { reason } });
         break;
       }
     }
   });
 };
 
-/** 每次 player:load 自增 */
+/** 播放操作代次，加载、停止、跳转和实例重置都会作废旧响应 */
 let loadSeq = 0;
+let streamingServerId: string | undefined;
+onPlayerReset(() => {
+  loadSeq++;
+  void streamingPlayback.stopStreamingPlayback();
+});
+
+/**
+ * 服务器断开或身份变化时停止对应曲目，并作废在途加载
+ * @param serverId - 服务器 ID
+ * @returns 服务端停止通知完成
+ */
+export const stopStreamingPlayer = (serverId: string): Promise<void> => {
+  if (streamingServerId === serverId) {
+    loadSeq++;
+    streamingServerId = undefined;
+    cancelPreparedTrack();
+    getPlayer().stop();
+  }
+  return streamingPlayback.stopStreamingPlayback(serverId);
+};
+
+/**
+ * 在原生加载或交叉交接完成后统一更新媒体信息与播放统计
+ * @param source - 当前曲目的实际音源
+ * @param options - 当前曲目的权威元数据和播放上下文
+ * @param meta - 原生解码器返回的音频信息
+ * @param seq - 用于忽略迟到的高清封面请求
+ * @returns 渲染进程使用的曲目信息
+ */
+const completeTrackLoad = (
+  source: string,
+  options: LoadOptions,
+  meta: JsMusicMetadata,
+  seq: number,
+) => {
+  const authoritative = options.meta ?? null;
+  const autoPlay = options.autoPlay ?? true;
+  const isRemote = authoritative != null && authoritative.source !== "local";
+  const remoteCover = isRemote ? (authoritative.coverOriginal ?? authoritative.cover) : undefined;
+  const coverFetchUrl =
+    remoteCover && /^(https?|streaming-cover):\/\//i.test(remoteCover) ? remoteCover : undefined;
+  const coverUrl = coverFetchUrl && /^https?:\/\//i.test(coverFetchUrl) ? coverFetchUrl : undefined;
+  const durationMs = toDisplayDurationMs(toMs(meta.duration));
+  const startMs = activeCueRange?.startMs ?? 0;
+  setCurrentTransitionRange(startMs, startMs + durationMs, source);
+  const displayTitle =
+    authoritative?.title ?? (meta.title || source.split(/[/\\]/).pop() || source);
+  const displayArtists = authoritative
+    ? (authoritative.artists ?? [])
+    : parseArtists(meta.artist ?? "");
+  const displayAlbum = authoritative?.album?.name ?? parseAlbum(meta.album ?? "")?.name ?? "";
+  const localCover = isRemote ? null : (getPlayer().getCoverRaw() ?? null);
+  const artistText = formatArtists(displayArtists);
+  const header = artistText ? `${displayTitle} - ${artistText}` : displayTitle || appName;
+  mediaService.setMetadata({
+    title: displayTitle,
+    artists: artistNames(displayArtists),
+    album: displayAlbum,
+    coverData: localCover ?? undefined,
+    coverUrl,
+    durationMs,
+  });
+  mediaService.setPlayState({ status: autoPlay ? "Playing" : "Paused" });
+  getMainWindow()?.setTitle(header);
+  setTraySongName(header);
+  setTrayPlayState(autoPlay ? "playing" : "paused");
+  if (!isRemote) setTaskbarThumbnailCover(meta.cover);
+  lastfm.onTrackLoaded({
+    title: displayTitle,
+    artist: displayArtists[0]?.name ?? "",
+    album: displayAlbum,
+    durationMs,
+    autoPlay,
+  });
+  neteaseScrobble.onTrackLoaded(authoritative, options.context, durationMs, autoPlay);
+  if (coverFetchUrl) {
+    void fetchBytes(coverFetchUrl).then((buf) => {
+      if (!buf || seq !== loadSeq) return;
+      mediaService.setMetadata({
+        title: displayTitle,
+        artists: artistNames(displayArtists),
+        album: displayAlbum,
+        coverData: buf,
+        coverUrl,
+        durationMs,
+      });
+      setTaskbarThumbnailCover(buf);
+    });
+  }
+  const quality = {
+    sampleRate: meta.originalSampleRate,
+    channels: meta.channels,
+    bitsPerSample: meta.bitsPerSample,
+    bitRate: meta.bitRate,
+    codec: meta.codec,
+  };
+  return {
+    success: true as const,
+    data: {
+      detail: {
+        quality,
+        embeddedLyric: meta.embeddedLyric,
+        externalLyrics: meta.externalLyrics,
+      },
+      mediaInfo: {
+        title: meta.title || displayTitle,
+        artists: authoritative?.artists?.length
+          ? authoritative.artists
+          : parseArtists(meta.artist ?? ""),
+        album: authoritative?.album ?? parseAlbum(meta.album ?? ""),
+        duration: durationMs,
+        cover: isRemote ? undefined : toCacheUrl(meta.cover),
+        quality,
+      },
+    },
+  };
+};
 
 /** 播放器相关 IPC */
 export const registerPlayerIpc = (): void => {
+  ipcMain.handle(
+    "player:prepareNext",
+    async (
+      _event,
+      id: string,
+      source: string,
+      startMs?: number,
+      preference?: TransitionPreference,
+      options?: AutoMixPrepareOptions,
+    ): Promise<PreparedTrackResult> => {
+      const ready = await prepareNextTrack(id, source, startMs, preference, options);
+      const plan = ready ? getPreparedAutoMixPlan(id) : undefined;
+      return {
+        ready,
+        autoMixStartMs: plan ? toDisplayPositionMs(plan.outStartMs) : undefined,
+      };
+    },
+  );
+  ipcMain.handle("player:cancelPrepared", (_event, id: string) => cancelPreparedTrack(id));
+  ipcMain.handle(
+    "player:transitionPrepared",
+    async (
+      _event,
+      id: string,
+      source: string,
+      remainingMs: number,
+      preference: TransitionPreference,
+      options: LoadOptions = {},
+      mode: TransitionMode = "crossfade",
+    ) => {
+      const seq = loadSeq;
+      const current = getPlayer();
+      try {
+        const automix = mode === "automix" ? getPreparedAutoMixPlan(id) : undefined;
+        if (
+          mode === "automix" &&
+          (!automix ||
+            !canAutoMix(current.getSpeed(), current.getPitch()) ||
+            !(await installPreparedAutoMixStems(id)))
+        )
+          return { success: false };
+        const streamingSource =
+          options.meta?.source === "streaming"
+            ? await streamingPlayback.prepareStreamingPlayback(options.meta, source)
+            : undefined;
+        if (seq !== loadSeq || current !== getPlayer()) return { success: false };
+        playerLog.info("开始寻找曲尾交接点", {
+          to: options.meta?.title,
+          preference,
+          remainingMs: Math.round(remainingMs),
+        });
+        const endMs = getTransitionEndMs(
+          activeCueRange
+            ? activeCueRange.startMs + activeCueRange.durationMs
+            : toMs(current.getDuration()),
+          toMs(current.getPosition()),
+          current.getSpeed(),
+        );
+        const remainingSeconds =
+          Math.max(0, endMs - toMs(current.getPosition())) / 1000 / current.getSpeed();
+        const meta = await current.transitionToPrepared(
+          id,
+          source,
+          remainingSeconds,
+          preference,
+          options.meta?.cueEndMs == null ? undefined : options.meta.cueEndMs / 1000,
+          endMs / 1000,
+          automix
+            ? {
+                outStartSeconds: automix.outStartMs / 1000,
+                inStartSeconds: automix.inStartMs / 1000,
+                durationSeconds: automix.durationMs / 1000,
+                outgoingRate: automix.outgoingRate,
+                levelRatio: store.get("player.loudnessNormalization") ? 1 : automix.levelRatio,
+                envelopes: automix.envelopes.map((span) => ({
+                  startSeconds: span.startMs / 1000,
+                  endSeconds: span.endMs / 1000,
+                })),
+              }
+            : undefined,
+        );
+        if (seq !== loadSeq || current !== getPlayer()) return { success: false };
+        if (!meta) {
+          playerLog.info("交叉过渡未启动，等待正常切歌");
+          return { success: false };
+        }
+        activeCueRange = cueRangeFromTrack(options.meta);
+        streamingServerId =
+          options.meta?.source === "streaming" ? options.meta.serverId : undefined;
+        void streamingPlayback.stopStreamingPlayback();
+        const completedSeq = ++loadSeq;
+        cancelPreparedTrack(id);
+        const inst = getPlayer();
+        const state = inst.getStatus().state as PlayerState;
+        const result = completeTrackLoad(
+          source,
+          { ...options, autoPlay: state === "playing" },
+          meta,
+          completedSeq,
+        );
+        streamingPlayback.startStreamingPlayback(
+          options.meta,
+          streamingSource,
+          result.data.mediaInfo.duration,
+          state === "playing",
+        );
+        const playback = {
+          position: toDisplayPositionMs(toMs(inst.getPosition())),
+          state,
+          speed: inst.getSpeed(),
+          timestamp: Date.now(),
+        };
+        if (options.meta) nowPlaying.prepareTransition(options.meta.id, playback);
+        mediaService.setTimeline({
+          currentMs: playback.position,
+          totalMs: result.data.mediaInfo.duration,
+        });
+        return {
+          ...result,
+          data: {
+            ...result.data,
+            playback,
+          },
+        };
+      } catch (error) {
+        cancelPreparedTrack(id);
+        if (seq !== loadSeq || current !== getPlayer()) return { success: false };
+        return fail(ErrorCode.UNKNOWN, error);
+      }
+    },
+  );
   // 注册实例创建/重建时的回调
   onPlayerCreated(registerNativeEvents);
-  onPlayerCreated(() => startDevicePolling());
+  onPlayerCreated(startDeviceMonitoring);
+  // 启动时同步独占模式开关到引擎（默认共享，无需处理）
+  onPlayerCreated((inst) => {
+    if (store.get("player.audioOutputMode") === "exclusive") {
+      inst.setExclusiveMode(true).catch((error) => {
+        playerLog.warn("应用独占模式配置失败:", error);
+      });
+    }
+  });
   // 加载音频文件
   ipcMain.handle("player:load", async (_event, source: string, options: LoadOptions = {}) => {
+    cancelPendingReinit();
     const autoPlay = options.autoPlay ?? true;
     const authoritative = options.meta ?? null;
     const cueRange = cueRangeFromTrack(authoritative);
+    const preparedAutoMix = options.preparedId
+      ? getPreparedAutoMixPlan(options.preparedId)
+      : undefined;
     activeCueRange = cueRange;
-    // 非本地音源
-    const isRemote = authoritative != null && authoritative.source !== "local";
+    setCurrentTransitionRange();
     const seq = ++loadSeq;
+    streamingServerId = authoritative?.source === "streaming" ? authoritative.serverId : undefined;
+    void streamingPlayback.stopStreamingPlayback();
+    if (!options.preparedId) cancelPreparedTrack();
     try {
       const inst = getPlayer();
+      if (authoritative?.source === "streaming" && !options.preparedId) inst.stop();
+      let streamingSource =
+        options.meta?.source === "streaming"
+          ? await streamingPlayback.prepareStreamingPlayback(options.meta, source)
+          : undefined;
+      if (seq !== loadSeq || inst !== getPlayer()) return fail(ErrorCode.LOAD_SUPERSEDED);
+      source = streamingSource?.url ?? source;
       const loadingEvent = {
         type: "status",
         data: {
@@ -194,6 +573,7 @@ export const registerPlayerIpc = (): void => {
           position: 0,
           duration: 0,
           volume: inst.getVolume(),
+          speed: inst.getSpeed(),
           isFinished: false,
         },
       };
@@ -213,13 +593,21 @@ export const registerPlayerIpc = (): void => {
       // 写一次 SMTC/托盘/标题
       const applyDisplay = (
         title: string,
-        artist: string,
+        artists: Artist[],
         album: string,
         coverData: Buffer | undefined,
         durationMs: number,
       ): void => {
-        const header = artist ? `${title} - ${artist}` : title || appName;
-        mediaService.setMetadata({ title, artist, album, coverData, coverUrl, durationMs });
+        const artistText = formatArtists(artists);
+        const header = artistText ? `${title} - ${artistText}` : title || appName;
+        mediaService.setMetadata({
+          title,
+          artists: artistNames(artists),
+          album,
+          coverData,
+          coverUrl,
+          durationMs,
+        });
         mediaService.setPlayState({ status: autoPlay ? "Playing" : "Paused" });
         getMainWindow()?.setTitle(header);
         setTraySongName(header);
@@ -229,99 +617,68 @@ export const registerPlayerIpc = (): void => {
       if (authoritative) {
         applyDisplay(
           authoritative.title || source.split(/[/\\]/).pop() || source,
-          formatArtists(authoritative.artists ?? []),
+          authoritative.artists ?? [],
           authoritative.album?.name ?? "",
           undefined,
           authoritative.duration ?? 0,
         );
       } else {
-        applyDisplay(source.split(/[/\\]/).pop() || source, "", "", undefined, 0);
+        applyDisplay(source.split(/[/\\]/).pop() || source, [], "", undefined, 0);
       }
-      const meta = await inst.load(source, cueRange ? false : autoPlay);
-      if (cueRange) {
-        await inst.seek(cueRange.startMs / 1000);
+      const meta = await (async () => {
+        try {
+          return await inst.load(
+            source,
+            cueRange || preparedAutoMix ? false : autoPlay,
+            options.preparedId,
+          );
+        } catch (error) {
+          if (
+            !streamingSource ||
+            !authoritative?.serverId ||
+            !/401|Unauthorized/i.test(String(error)) ||
+            seq !== loadSeq
+          )
+            throw error;
+          invalidateStreamingSession(authoritative.serverId);
+          streamingSource = await streamingPlayback.prepareStreamingPlayback(authoritative, source);
+          if (seq !== loadSeq) throw new Error("[Cancelled]");
+          source = streamingSource!.url;
+          return inst.load(source, cueRange ? false : autoPlay);
+        }
+      })().finally(() => {
+        if (options.preparedId) cancelPreparedTrack(options.preparedId);
+      });
+      if (seq !== loadSeq || inst !== getPlayer()) return fail(ErrorCode.LOAD_SUPERSEDED);
+      if (cueRange || preparedAutoMix) {
+        const expectedStart = (cueRange?.startMs ?? 0) / 1000;
+        if (meta.preparedPosition !== expectedStart) await inst.seek(expectedStart);
+        if (seq !== loadSeq || inst !== getPlayer()) return fail(ErrorCode.LOAD_SUPERSEDED);
         if (autoPlay) await inst.play();
       }
-      const nativeDurationMs = toMs(meta.duration);
-      const durationMs = toDisplayDurationMs(nativeDurationMs);
-      const fallbackTitle = meta.title || source.split(/[/\\]/).pop() || source;
-      const displayTitle = authoritative?.title ?? fallbackTitle;
-      const displayArtist = authoritative
-        ? formatArtists(authoritative.artists ?? [])
-        : formatArtists(parseArtists(meta.artist ?? ""));
-      const displayAlbum = authoritative?.album?.name ?? parseAlbum(meta.album ?? "")?.name ?? "";
-      // 本地封面
-      const localCover = isRemote ? null : (inst.getCoverRaw() ?? null);
-      applyDisplay(displayTitle, displayArtist, displayAlbum, localCover ?? undefined, durationMs);
-      if (!isRemote) setTaskbarThumbnailCover(meta.cover);
-      // Last.fm
-      const primaryArtist =
-        authoritative?.artists?.[0]?.name ??
-        parseArtists(meta.artist ?? "")[0]?.name ??
-        displayArtist;
-      lastfm.onTrackLoaded({
-        title: displayTitle,
-        artist: primaryArtist,
-        album: displayAlbum,
-        durationMs,
-        autoPlay,
-      });
-      neteaseScrobble.onTrackLoaded(authoritative, durationMs, autoPlay);
-      // 远端高清封面
-      if (coverFetchUrl) {
-        void fetchBytes(coverFetchUrl).then((buf) => {
-          if (!buf) return;
-          if (seq !== loadSeq) return;
-          mediaService.setMetadata({
-            title: displayTitle,
-            artist: displayArtist,
-            album: displayAlbum,
-            coverData: buf,
-            coverUrl,
-            durationMs,
-          });
-          setTaskbarThumbnailCover(buf);
-        });
-      }
-      const quality = {
-        sampleRate: meta.originalSampleRate,
-        channels: meta.channels,
-        bitsPerSample: meta.bitsPerSample,
-        bitRate: meta.bitRate,
-        codec: meta.codec,
-      };
-      const data = {
-        detail: {
-          quality,
-          embeddedLyric: meta.embeddedLyric,
-          externalLyrics: meta.externalLyrics,
-        },
-        mediaInfo: {
-          duration: durationMs,
-          cover: isRemote ? undefined : toCacheUrl(meta.cover),
-          quality,
-        },
-      };
-      playerLog.debug(`加载成功: ${displayTitle}`);
-      return { success: true, data };
+      if (seq !== loadSeq || inst !== getPlayer()) return fail(ErrorCode.LOAD_SUPERSEDED);
+      playerLog.debug(`加载成功: ${authoritative?.title ?? meta.title ?? source}`);
+      const result = completeTrackLoad(source, options, meta, seq);
+      streamingPlayback.startStreamingPlayback(
+        options.meta,
+        streamingSource,
+        result.data.mediaInfo.duration,
+        inst.getStatus().state === "playing",
+      );
+      return result;
     } catch (error) {
       if (seq === loadSeq) activeCueRange = null;
-      const msg = error instanceof Error ? error.message : String(error);
-      // 被更新的 load/stop 取代是正常竞态结果，不能按源类型误判为网络/解码错误
-      //（那两类是可跳曲错误，会让用户的停止操作变成自动跳下一曲）
-      if (msg.includes("已被更新的 load 取代")) {
-        return fail(ErrorCode.LOAD_SUPERSEDED);
-      }
-      const isDeviceError = /output device|NoDevice|DeviceNotAvailable/i.test(msg);
-      const isNetwork = source.startsWith("http://") || source.startsWith("https://");
-      const code = isDeviceError
-        ? ErrorCode.DEVICE_NOT_FOUND
-        : isNetwork
-          ? ErrorCode.NETWORK_ERROR
-          : ErrorCode.FILE_DECODE_ERROR;
+      const code = classifyLoadError(error, source);
       // 解码失败的源指向歌曲缓存目录 → 文件已损坏，把这条缓存项作废
-      if (code === ErrorCode.FILE_DECODE_ERROR && source.startsWith(getSongCacheDir())) {
-        void songCache.invalidate(source);
+      if (
+        [
+          ErrorCode.FILE_DECODE_ERROR,
+          ErrorCode.FILE_NOT_FOUND,
+          ErrorCode.FILE_NO_AUDIO_STREAM,
+        ].includes(code) &&
+        source.startsWith(getSongCacheDir())
+      ) {
+        await songCache.invalidate(source);
       }
       return fail(code, error);
     }
@@ -349,8 +706,15 @@ export const registerPlayerIpc = (): void => {
 
   // 停止播放并释放资源
   ipcMain.handle("player:stop", () => {
+    loadSeq++;
+    void streamingPlayback.stopStreamingPlayback();
     try {
+      neteaseScrobble.onStopped();
+      lastfm.onStopped();
+      cancelPreparedTrack();
+      cancelPendingReinit();
       activeCueRange = null;
+      setCurrentTransitionRange();
       getPlayer().stop();
       return { success: true };
     } catch (error) {
@@ -359,11 +723,19 @@ export const registerPlayerIpc = (): void => {
   });
 
   // 跳转到指定播放位置
-  ipcMain.handle("player:seek", async (_event, positionMs: number) => {
+  ipcMain.handle("player:seek", async (_event, positionMs: number, restartRound = false) => {
+    const seq = ++loadSeq;
     try {
+      /** 重播时先装配轮次，原生 seek 的播放事件才能启动新的计时 */
+      if (restartRound) {
+        neteaseScrobble.onRepeatOneRestart();
+        lastfm.onRepeatOneRestart();
+      }
       const enginePositionMs = toEnginePositionMs(positionMs);
       const positionSecs = enginePositionMs / 1000;
       await getPlayer().seek(positionSecs);
+      if (seq !== loadSeq) return { success: false };
+      streamingPlayback.onStreamingSeek(positionMs);
       mediaService.setTimeline({
         currentMs: positionMs,
         totalMs: toDisplayDurationMs(toMs(getPlayer().getDuration())),
@@ -371,6 +743,10 @@ export const registerPlayerIpc = (): void => {
       });
       return { success: true };
     } catch (error) {
+      if (restartRound && seq === loadSeq) {
+        neteaseScrobble.onStopped();
+        lastfm.onStopped();
+      }
       return fail(ErrorCode.UNKNOWN, error);
     }
   });
@@ -384,6 +760,11 @@ export const registerPlayerIpc = (): void => {
     } catch (error) {
       return fail(ErrorCode.UNKNOWN, error);
     }
+  });
+
+  ipcMain.handle("player:setPauseOnDeviceSwitch", (_event, enabled: boolean) => {
+    setPauseOnDeviceSwitch(enabled);
+    return { success: true };
   });
 
   // 获取当前音量
@@ -416,9 +797,19 @@ export const registerPlayerIpc = (): void => {
         position: toDisplayPositionMs(toMs(raw.position)),
         duration: toDisplayDurationMs(toMs(raw.duration)),
         volume: raw.volume,
+        speed: getPlayer().getSpeed(),
         isFinished: raw.isFinished,
       },
     };
+  });
+
+  // 获取当前真实的音频流与输出参数
+  ipcMain.handle("player:getStreamInfo", () => {
+    try {
+      return { success: true, data: getPlayer().getStreamInfo() };
+    } catch (error) {
+      return fail(ErrorCode.UNKNOWN, error);
+    }
   });
 
   // 重建音频输出设备
@@ -427,7 +818,10 @@ export const registerPlayerIpc = (): void => {
       await getPlayer().reinitOutput();
       return { success: true };
     } catch (error) {
-      return fail(ErrorCode.UNKNOWN, error);
+      return fail(
+        isNativeDeviceError(error) ? ErrorCode.DEVICE_INIT_FAILED : ErrorCode.UNKNOWN,
+        error,
+      );
     }
   });
 
@@ -475,6 +869,7 @@ export const registerPlayerIpc = (): void => {
   ipcMain.handle("player:setSpeed", (_event, speed: number) => {
     try {
       getPlayer().setSpeed(speed);
+      mediaService.setRate(speed);
       nowPlaying.onSpeedChange(speed);
       return { success: true };
     } catch (error) {
@@ -536,7 +931,7 @@ export const registerPlayerIpc = (): void => {
       if (!LYRIC_FILE_EXTS.has(ext)) {
         return fail(ErrorCode.UNKNOWN, new Error(`不支持的歌词文件类型: ${ext}`));
       }
-      const content = await readFile(filePath, "utf-8");
+      const content = await readFileAutoEncoding(filePath);
       return { success: true, data: content };
     } catch (error) {
       return fail(ErrorCode.UNKNOWN, error);
@@ -576,15 +971,23 @@ export const registerPlayerIpc = (): void => {
     }
   });
 
-  // 切换输出设备（传 null 使用系统默认）
-  ipcMain.handle("player:setOutputDevice", async (_event, deviceName: string | null) => {
-    try {
-      await getPlayer().setOutputDevice(deviceName ?? undefined);
-      return { success: true };
-    } catch (error) {
-      return fail(ErrorCode.UNKNOWN, error);
-    }
-  });
+  // 切换输出设备（传设备 ID，null 使用系统默认）
+  ipcMain.handle(
+    "player:setOutputDevice",
+    async (_event, deviceId: string | null, pauseBeforeSwitch = false) => {
+      try {
+        cancelPendingReinit();
+        if (pauseBeforeSwitch) getPlayer().pauseImmediately();
+        await getPlayer().setOutputDevice(deviceId ?? undefined);
+        return { success: true };
+      } catch (error) {
+        return fail(
+          isNativeDeviceError(error) ? ErrorCode.DEVICE_INIT_FAILED : ErrorCode.UNKNOWN,
+          error,
+        );
+      }
+    },
+  );
 
   // 获取当前选择的输出设备名称
   ipcMain.handle("player:getSelectedDeviceName", () => {
@@ -593,6 +996,13 @@ export const registerPlayerIpc = (): void => {
     } catch (error) {
       return fail(ErrorCode.UNKNOWN, error);
     }
+  });
+
+  // 队列由主窗口维护，仅同步索引以供外部查询。
+  ipcMain.on("player:syncQueueIndex", (event, index: number) => {
+    if (event.sender !== getMainWindow()?.webContents) return;
+    if (!Number.isSafeInteger(index) || index < -1) return;
+    playerControl.syncQueueIndex(index);
   });
 
   // 渲染进程同步播放模式到托盘
@@ -623,13 +1033,20 @@ export const registerPlayerIpc = (): void => {
           inst.pause();
           break;
         case "Stop":
+          loadSeq++;
+          void streamingPlayback.stopStreamingPlayback();
+          cancelPreparedTrack();
+          setCurrentTransitionRange();
           inst.stop();
           break;
         case "Seek":
           if (event.positionMs != null) {
+            const seq = ++loadSeq;
             const targetMs = event.positionMs;
             sendToMain("player:event", { type: "seek", data: { position: targetMs } });
-            void inst.seek(targetMs / 1000).then(() => {
+            void inst.seek(toEnginePositionMs(targetMs) / 1000).then(() => {
+              if (seq !== loadSeq || inst !== getPlayer()) return;
+              streamingPlayback.onStreamingSeek(targetMs);
               mediaService.setTimeline({
                 currentMs: targetMs,
                 totalMs: toMs(inst.getDuration()),
@@ -640,7 +1057,45 @@ export const registerPlayerIpc = (): void => {
           break;
         case "SetVolume":
           if (event.volume != null) {
-            inst.setVolume(event.volume);
+            if (0 <= event.volume && event.volume <= 1) {
+              inst.setVolume(event.volume);
+              mediaService.setVolume(event.volume);
+              sendToMain("player:event", {
+                type: "status",
+                data: {
+                  state: inst.getStatus().state as PlayerState,
+                  position: toDisplayPositionMs(toMs(inst.getPosition())),
+                  duration: toDisplayDurationMs(toMs(inst.getDuration())),
+                  volume: event.volume,
+                  speed: inst.getSpeed(),
+                  isFinished: false,
+                },
+              });
+            } else {
+              playerLog.warn(`无效的音量值: ${event.volume}`);
+            }
+          }
+          break;
+        case "SetRate":
+          if (event.rate != null) {
+            if (0.5 <= event.rate && event.rate <= 2.0) {
+              inst.setSpeed(event.rate);
+              mediaService.setRate(event.rate);
+              nowPlaying.onSpeedChange(event.rate);
+              sendToMain("player:event", {
+                type: "status",
+                data: {
+                  state: inst.getStatus().state as PlayerState,
+                  position: toDisplayPositionMs(toMs(inst.getPosition())),
+                  duration: toDisplayDurationMs(toMs(inst.getDuration())),
+                  volume: inst.getVolume(),
+                  speed: event.rate,
+                  isFinished: false,
+                },
+              });
+            } else {
+              playerLog.warn(`无效的播放速率值: ${event.rate}`);
+            }
           }
           break;
         case "NextTrack":
@@ -652,7 +1107,15 @@ export const registerPlayerIpc = (): void => {
       }
     } catch {}
   });
-
+  // 系统进入睡眠时暂停播放
+  powerMonitor.on("suspend", () => {
+    try {
+      getPlayer().pause();
+      playerLog.info("系统进入睡眠，已暂停播放");
+    } catch (error) {
+      playerLog.warn("睡眠时暂停播放失败:", error);
+    }
+  });
   // 系统休眠唤醒后重建音频输出设备
   const resumeHandler = async (): Promise<void> => {
     const inst = getPlayer();
@@ -672,15 +1135,18 @@ export const registerPlayerIpc = (): void => {
     // 全部重试失败，销毁损坏的实例
     playerLog.error("重建音频输出全部失败，销毁播放器实例");
     resetPlayer();
-    stopDevicePolling();
+    stopDeviceMonitoring();
     const stoppedEvent = {
       type: "status",
-      data: { state: "stopped", position: 0, duration: 0, volume: 1, isFinished: false },
+      data: { state: "stopped", position: 0, duration: 0, volume: 1, speed: 1, isFinished: false },
     };
     sendToMain("player:event", stoppedEvent);
     wsBroadcast(stoppedEvent);
   };
   powerMonitor.on("resume", resumeHandler);
-  // 退出前停止设备轮询
-  app.on("before-quit", stopDevicePolling);
+  // 退出前停止设备监听并释放休眠抑制
+  app.on("before-quit", () => {
+    stopDeviceMonitoring();
+    releasePowerBlocker();
+  });
 };

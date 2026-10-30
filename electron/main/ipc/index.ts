@@ -21,24 +21,33 @@ import { registerCloudIpc } from "./cloud";
 import { registerCommentsIpc } from "./comments";
 import { registerAiModelIpc } from "./aiModel";
 import { registerPlaylistIpc } from "./playlist";
+import { registerRecognitionIpc } from "./recognition";
+import { registerOpenccIpc } from "./opencc";
+import { registerAutoMixIpc } from "./automix";
 
-/** 注册所有 IPC 处理 */
-export const registerIpcHandlers = (): void => {
+/**
+ * 注册所有 IPC 处理
+ * @param onStartupComplete - 主界面启动完成后执行的应用初始化回调
+ */
+export const registerIpcHandlers = (onStartupComplete: () => void): void => {
   registerSystemIpc();
   registerPlayerIpc();
+  registerAutoMixIpc();
   registerConfigIpc();
   registerLibraryIpc();
   registerNowPlayingIpc();
-  registerWindowIpc();
+  registerWindowIpc(onStartupComplete);
   registerPluginIpc();
   registerApisIpc();
   registerCloudIpc();
   registerCommentsIpc();
   registerLyricsIpc();
+  registerOpenccIpc();
   registerHotkeyIpc();
   registerThemeIpc();
   registerStreamingIpc();
   registerPlaylistIpc();
+  registerRecognitionIpc();
   registerLastfmIpc();
   registerCacheIpc();
   registerDownloadIpc();

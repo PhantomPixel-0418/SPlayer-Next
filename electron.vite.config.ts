@@ -33,11 +33,16 @@ export default defineConfig({
   main: {
     publicDir: resolve(__dirname, "public"),
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve(__dirname, "electron/main/index.ts"),
-          // 插件 host worker（utilityProcess 入口，托管所有插件 vm 上下文）
+          // 插件 host worker
           "host.worker": resolve(__dirname, "electron/main/plugins/host.worker.ts"),
+          // 听歌识曲指纹 worker
+          "fingerprint.worker": resolve(
+            __dirname,
+            "electron/main/services/recognition/fingerprint.worker.ts",
+          ),
         },
       },
     },
@@ -46,15 +51,17 @@ export default defineConfig({
         "@main": resolve(__dirname, "electron/main"),
         "@shared": resolve(__dirname, "shared"),
         "@splayer/audio-engine": resolve(__dirname, "native/audio-engine"),
+        "@splayer/audio-capture": resolve(__dirname, "native/audio-capture"),
         "@splayer/media-ctrl": resolve(__dirname, "native/media-ctrl"),
         "@splayer/taskbar-lyric": resolve(__dirname, "native/taskbar-lyric"),
         "@splayer/taskbar-thumbnail": resolve(__dirname, "native/taskbar-thumbnail"),
+        "@splayer/opencc": resolve(__dirname, "native/opencc"),
       },
     },
   },
   preload: {
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve(__dirname, "electron/preload/index.ts"),
         },
@@ -76,12 +83,18 @@ export default defineConfig({
     server: {
       port: 14558,
       watch: {
-        ignored: ["**/native/**/target/**"],
+        // Rust workspace 在根目录生成 target，避免监听大量构建产物
+        ignored: ["**/target/**"],
       },
+    },
+    optimizeDeps: {
+      // 自动注册的组件不在 HTML 的静态导入图中，需扫描其惰性加载依赖
+      entries: ["index.html", "windows/**/index.html", "src/components/**/*.vue"],
+      include: ["reka-ui"],
     },
     publicDir: resolve(__dirname, "public"),
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve(__dirname, "index.html"),
           "desktop-lyric": resolve(__dirname, "windows/desktop-lyric/index.html"),
@@ -117,6 +130,8 @@ export default defineConfig({
       }),
       Components({
         dirs: ["src/components"],
+        // 生产构建复用已提交的声明，避免并行转换重复写入同一文件
+        dts: process.env.NODE_ENV !== "production",
         resolvers: [RekaResolver(), IconsResolver({ prefix: "icon", customCollections: ["sp"] })],
       }),
     ],

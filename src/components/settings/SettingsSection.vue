@@ -13,9 +13,19 @@ const props = withDefaults(
 
 const { t } = useI18n();
 
-const visibleItems = computed(() =>
-  props.section.items.filter((item) => !item.visible || item.visible()),
-);
+const isSectionVisible = computed(() => {
+  if (props.section.visible && !props.section.visible()) return false;
+  return true;
+});
+
+const visibleItems = computed(() => {
+  if (!isSectionVisible.value) return [];
+  return props.section.items.filter((item) => !item.visible || item.visible());
+});
+
+/** 非响应式：首屏之后因可见条件新出现的项不再播放入场动画，与子项展开一致 */
+let entered = false;
+onMounted(() => (entered = true));
 
 const itemStyle = (i: number) => {
   const d = props.highlightKey ? "0s" : `${Math.min(props.startIndex + i, 15) * 0.03}s`;
@@ -27,7 +37,7 @@ const itemStyle = (i: number) => {
 </script>
 
 <template>
-  <div v-if="visibleItems.length > 0" class="mb-8 last:mb-0">
+  <div v-if="isSectionVisible && visibleItems.length > 0" class="mb-8 last:mb-0">
     <h3
       class="animate-slide-in-item flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1"
       :style="itemStyle(0)"
@@ -43,8 +53,8 @@ const itemStyle = (i: number) => {
         v-for="(item, i) in visibleItems"
         :key="item.key"
         :item="item"
-        :highlighted="item.key === highlightKey"
-        class="animate-slide-in-item"
+        :highlight-key="highlightKey"
+        :class="{ 'animate-slide-in-item': !entered }"
         :style="itemStyle(i + 1)"
       />
     </div>

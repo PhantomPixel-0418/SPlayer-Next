@@ -2,6 +2,9 @@ node_modules
 dist
 out
 build
+!/build/
+/build/*
+!/build/installer/
 .DS_Store
 .eslintcache
 .claude
@@ -11,12 +14,16 @@ docs/.vitepress/cache
 docs/.vitepress/dist
 skills-lock.json
 *.log*
+__pycache__/
+*.py[cod]
 .vscode/settings.json
 .idea
 
 # Rust build artifacts
 **/target
 native/*/*.node
+native/*/*.tmp
+native/*/*.swp
 # native/*/index.d.ts
 package-lock.json
 

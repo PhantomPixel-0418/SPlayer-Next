@@ -1,7 +1,7 @@
 /**
  * xeapi 公钥获取与会话状态
  *
- * 反爬接口（如游客注册）走 xeapi：先向 /api/gorilla/anti/crawler/security/key/get
+ * 反爬接口（如游客注册）走 xeapi：先向 /api/bsr/sk/get
  * 拉取 X25519 公钥包（缓存于进程），首次请求后服务端经响应头下发会话密钥，后续请求复用。
  */
 
@@ -12,6 +12,8 @@ import { fetchWithProxy } from "@main/utils/proxy";
 let publicKeyState: XeapiPublicKey | null = null;
 let sessionId = "";
 let sessionKey = "";
+let publicKeyPromise: Promise<XeapiPublicKey> | null = null;
+let publicKeyGeneration = 0;
 
 /** 16 位数字 nonce */
 const generateNonce = (): string => {
@@ -28,7 +30,7 @@ const fetchPublicKey = async (
   const nonce = generateNonce();
   const timestamp = String(Date.now());
   const data: Record<string, string> = {
-    appVersion: "9.1.65",
+    appVersion: "9.5.61",
     currentKeyVersion,
     deviceId,
     nonce,
@@ -41,7 +43,7 @@ const fetchPublicKey = async (
     uid: "",
   };
 
-  const res = await fetchWithProxy(`${API_DOMAIN}/api/gorilla/anti/crawler/security/key/get`, {
+  const res = await fetchWithProxy(`${API_DOMAIN}/api/bsr/sk/get`, {
     method: "POST",
     headers: {
       "User-Agent": UA_MAP.api.android,
@@ -71,27 +73,45 @@ const fetchPublicKey = async (
 /** 确保已有公钥（缺失则拉取并缓存），返回当前公钥状态 */
 export const ensureXeapiKey = async (deviceId: string): Promise<XeapiPublicKey> => {
   if (publicKeyState?.sk) return publicKeyState;
-  const key = await fetchPublicKey(deviceId, publicKeyState?.version ?? "");
-  if (!key.sk && publicKeyState?.sk) key.sk = publicKeyState.sk;
-  publicKeyState = key;
-  return key;
+  if (!publicKeyPromise) {
+    const generation = publicKeyGeneration;
+    const promise = fetchPublicKey(deviceId, publicKeyState?.version ?? "")
+      .then((key) => {
+        if (!key.sk && publicKeyState?.sk) key.sk = publicKeyState.sk;
+        if (generation === publicKeyGeneration) publicKeyState = key;
+        return key;
+      })
+      .finally(() => {
+        if (publicKeyPromise === promise) publicKeyPromise = null;
+      });
+    publicKeyPromise = promise;
+  }
+  return publicKeyPromise;
 };
 
 /** 读取当前会话（首次请求为空） */
-export const getXeapiSession = (): { sessionId: string; sessionKey: string } => ({
+export const getXeapiSession = (): {
+  sessionId: string;
+  sessionKey: string;
+  generation: number;
+} => ({
   sessionId,
   sessionKey,
+  generation: publicKeyGeneration,
 });
 
 /** 服务端响应头下发的会话密钥 */
-export const updateXeapiSession = (id: string, key: string): void => {
+export const updateXeapiSession = (id: string, key: string, generation: number): void => {
+  if (generation !== publicKeyGeneration) return;
   sessionId = id;
   sessionKey = key;
 };
 
 /** 失效时清空（下次重新拉取） */
 export const resetXeapiKey = (): void => {
+  publicKeyGeneration += 1;
   publicKeyState = null;
+  publicKeyPromise = null;
   sessionId = "";
   sessionKey = "";
 };

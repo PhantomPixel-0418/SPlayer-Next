@@ -22,6 +22,10 @@ pnpm build:native         # Rust only; add `--dev` for debug
 
 `audio-engine` static-links FFmpeg via the `ffmpeg_audio` crate (vendor zip + cc-built at compile time). Zero environment dependency — no `FFMPEG_DIR` / `PKG_CONFIG_PATH`, no system FFmpeg required.
 
+## Shell
+
+The development shell is Git Bash on Windows. Write all terminal commands in bash syntax (`&&`, `cd`, etc.) — no PowerShell-only constructs. File paths remain in Windows format (backslashes).
+
 ## Architecture
 
 ### Process Model
@@ -33,9 +37,10 @@ pnpm build:native         # Rust only; add `--dev` for debug
 
 ### Native Modules (Rust + NAPI-RS)
 
-Three `.node` modules in `native/`, built via `scripts/build-native.ts`, lazy-loaded by `electron/main/utils/nativeLoader.ts`. NAPI-RS auto-generates `index.d.ts`, imported via path aliases `@splayer/audio-engine`, `@splayer/media-ctrl`, `@splayer/taskbar-lyric`.
+Four `.node` modules in `native/`, built via `scripts/build-native.ts`, lazy-loaded by `electron/main/utils/nativeLoader.ts`. NAPI-RS auto-generates `index.d.ts`, imported via path aliases `@splayer/audio-engine`, `@splayer/audio-capture`, `@splayer/media-ctrl`, `@splayer/taskbar-lyric`.
 
 - `audio-engine` — `ffmpeg_audio` decode (static FFmpeg) + rodio playback + FFT + cover extraction. URLs wrapped as `Read + Seek` via `ffmpeg_audio::HttpAudioSource` (using `HttpCancelHandle` for cancellation/reset) — TLS handled in Rust (`reqwest` + `rustls`), cross-platform with no system deps. Pushes events (state/position/ended/outputStalled) via ThreadsafeFunction. Has load_token race protection and an `HttpCancelHandle` handle injected into `HttpAudioSource` for instant stop and reset.
+- `audio-capture` — System sound / microphone capture for song recognition. Windows via WASAPI Loopback; Linux via PulseAudio (`libpulse-binding`, needs `libpulse-dev` at build time — CI `dev.yml`/`release.yml` install it). Collects 8 kHz mono f32 PCM.
 - `media-ctrl` — Cross-platform system media controls (Windows SMTC / Linux MPRIS / macOS MPNowPlaying) + Discord RPC.
 - `taskbar-lyric` — Windows taskbar lyric text rendering with RegistryWatcher / UiaWatcher / TrayWatcher.
 
@@ -66,9 +71,18 @@ Server protocol clients live in the main process (`electron/main/services/stream
 - `electron/main/services/streaming/connection.ts` — connection tests, connect, and authenticated adapter requests.
 - `electron/main/services/streaming/coverProtocol.ts` — `streaming-cover://` proxy registered for the default and `persist:main` sessions.
 - `electron/main/services/streaming/adapters/` — Server response → unified `Track / Album / Artist / Playlist`. Trusts server's artist field; no client-side splitting.
-- `services/streaming/session.ts` — Jellyfin/Emby `/Sessions/Playing` heartbeat + PlaySessionId state machine; called from `core/player.ts`.
+- `electron/main/services/streaming/sync.ts` + `snapshot.ts` — cancellable enumeration into temporary SQLite staging, then atomically publish all four indexes; failed or interrupted sync keeps the previous snapshot
+- `electron/main/services/streaming/playback.ts` + `playbackSession.ts` — native event driven playback sessions, unique PlaySessionId per play, Jellyfin/Emby start/progress/stop and Subsonic now-playing/scrobble; download and preload never report playback
+- Favorites — server responses are authoritative; SQLite and renderer consume per-track updates, with sync-time overrides preventing late pages from overwriting user actions
 - `stores/streaming.ts` — Server list, active state, and complete shallowRef arrays; main-process update events trigger SQLite snapshot reloads, with no polling or direct media-server access.
 - Credentials — `electron/main/services/streaming/config.ts` encrypts via Electron `safeStorage` to `{userData}/app-data/config/streaming.json`. `accessToken / userId` remain in the bounded main-process session cache and are re-acquired on connect.
+
+Playback resolves remote streaming sources in the main process from `Track.serverId / originalId`; the renderer only passes a `streaming://` identity placeholder or a cached local path. Albums, artists, playlists and navigation retain the originating server ID
+
+Server identity changes advance `mediaRevision`, which is copied to `Track.serverRevision` and
+used to isolate playback, song caches, and completed downloads. Renaming a server preserves
+its media identity and active playback. Downloads use the protocol's original-file endpoint,
+with authentication recovery and permission checks performed in the main process
 
 ### Lyric Windows
 
@@ -84,7 +98,7 @@ Don't reimplement these inside individual windows.
 
 - `shared/types/player.ts` — `Track`, `TrackDetail`, `Artist`, `Album`, `AudioQuality`, `PlayerState`, `PlayerStatus`, `PlayerEvent`, `LoadOptions`, `LoadResult`, `IpcResponse`
 - `shared/types/lyrics.ts` — `LyricFormat`, `LyricSource (external | embedded | online)`, `LyricData`, `LyricLine`, `LyricWord`, `LyricSpan`
-- `shared/types/platform.ts` — `Platform (netease | qqmusic | kugou)`
+- `shared/types/platform/` — `index.ts` defines `Platform (netease | qqmusic | kugou)`; `netease.ts / qqmusic.ts / kugou.ts` hold platform data contracts shared by main and renderer
 - `shared/types/streaming.ts` — `StreamingServerType`, `StreamingServerConfig`, `StreamingPingResult`, `StreamingAuthResult`, etc.
 
 `Track` is for queue storage (no heavy data); `TrackDetail` loads on demand.
@@ -140,8 +154,13 @@ Renderer uses `vue-i18n` with `src/i18n/locales/{zh-CN,en-US}.json`. Main proces
 
 ### Comments — Chinese, with JSDoc
 
-All comments in Chinese. Methods use standard JSDoc with `@param name - description` and
-`@returns` when meaningful:
+All comments in Chinese. Every newly added or modified method must have a concise, meaningful
+JSDoc description of its purpose and parameters, using `@param name - description` and
+`@returns` when meaningful. This applies to internal helpers, class methods, adapter methods,
+and exported APIs. Anonymous callbacks do not need redundant explanations of obvious logic
+
+Avoid trailing periods in Chinese comments, JSDoc descriptions, and UI copy whenever possible.
+Keep the wording concise and natural
 
 ```ts
 /**
@@ -176,13 +195,11 @@ Frontend time is **milliseconds** everywhere. Rust engine uses seconds internall
 
 Never hand-write native module types — import from `@splayer/*`. Use `shallowRef` for `Track` arrays/collections (avoid deep proxy). Vue proxied objects can't be cloned by IDB (`DataCloneError`); use `toRaw` before persisting.
 
-### Auto-generated Files
-
-Don't edit `auto-imports.d.ts`, `components.d.ts`, `native/*/index.d.ts` — regenerated by tooling.
-
 ### Auto-imports
 
 In Vue components, `vue / pinia / vue-router / @vueuse/core / vue-i18n` are auto-imported, and UI components in `src/components/` are auto-registered.
+Icon components used only in Vue templates are auto-imported. Do not manually import them in
+`<script setup>`; import an icon explicitly only when it is referenced by script code.
 
 ### Logging (Main Process)
 
@@ -195,6 +212,10 @@ In preload's `onEvent`, always `ipcRenderer.removeAllListeners()` before adding 
 ### Prettier
 
 Double quotes, semicolons, 100-char width, trailing commas.
+
+Before committing, run Prettier on every file included in the commit and verify the formatted
+working tree before creating the commit. Do not leave formatting-only changes from the current task
+outside the commit.
 
 ### Shared Types
 

@@ -2,6 +2,7 @@
 import type { CoverItem } from "@/types/artist";
 import artistFallback from "@/assets/images/artist.jpg";
 import { formatPlayCount } from "@/utils/format/playCount";
+import { captureCover } from "@/services/coverTransition";
 
 export interface CoverCardProps {
   /** 卡片数据 */
@@ -21,7 +22,15 @@ const props = withDefaults(defineProps<CoverCardProps>(), {
 
 const { locale } = useI18n();
 
-defineEmits<{ click: [] }>();
+const emit = defineEmits<{ click: [] }>();
+/** 稳定的封面标识：页面重新挂载后仍能匹配，不能用组件实例 ID */
+const coverKey = computed(() => `${props.type}:${props.item.id}`);
+
+/** 记录封面后分发点击，由实际目标路由决定是否启用共享过渡 */
+const handleClick = (): void => {
+  captureCover(props.item, coverKey.value);
+  emit("click");
+};
 
 const coverRounded = computed(() => (props.type === "artist" ? "rounded-full" : props.rounded));
 const actualFallback = computed(() => (props.type === "artist" ? artistFallback : props.fallback));
@@ -35,7 +44,7 @@ const displayPlayCount = computed(() =>
   <div
     class="cursor-pointer group rounded-xl transition-colors duration-300 relative"
     :class="type !== 'artist' ? 'hover:bg-primary/10' : ''"
-    @click="$emit('click')"
+    @click="handleClick"
   >
     <!-- 播放次数徽标（放在 SImg 外面，避免 overflow-hidden 裁剪） -->
     <div
@@ -50,13 +59,16 @@ const displayPlayCount = computed(() =>
     <!-- 封面 -->
     <div class="relative overflow-hidden group-hover:will-change-transform" :class="coverRounded">
       <SImg
+        :data-cover-key="coverKey"
         :src="item.cover"
         :fallback="actualFallback"
         :alt="item.title"
-        class="w-full aspect-square transition-[transform,filter] duration-300 ease-out group-hover:scale-108 group-hover:brightness-80"
+        class="cover-card-image w-full aspect-square transition-[transform,filter] duration-300 ease-out group-hover:scale-108 group-hover:brightness-80"
+        :class="coverRounded"
       />
       <!-- 播放按钮 -->
       <div
+        data-cover-action
         class="absolute size-9 flex items-center justify-center rounded-full opacity-0 transition-[opacity,transform] duration-300 group-hover:opacity-100"
         :class="
           type === 'artist'
@@ -89,3 +101,16 @@ const displayPlayCount = computed(() =>
     </div>
   </div>
 </template>
+
+<style scoped>
+[data-cover-shared] {
+  transform: none !important;
+  filter: none !important;
+  transition: none;
+}
+
+[data-cover-shared] + [data-cover-action] {
+  opacity: 0 !important;
+  transition: none;
+}
+</style>

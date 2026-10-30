@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: "StreamingIndex" });
+
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import { useStreamingStore } from "@/stores/streaming";
@@ -25,6 +27,7 @@ const {
   isConnected,
   connectionStatus,
   loading,
+  syncError,
   songs,
   albums,
   artists,
@@ -180,6 +183,7 @@ const handleMoreMenu = (key: string): void => {
       </div>
       <!-- Tabs -->
       <STabs :model-value="activeTab" :tabs="tabs" @update:model-value="switchTab" />
+      <div v-if="syncError" role="alert" class="text-xs text-red-500 mt-2">{{ syncError }}</div>
     </div>
     <!-- 空状态：未配置服务器 -->
     <div v-if="servers.length === 0" class="flex-1 flex items-center justify-center">
@@ -224,7 +228,14 @@ const handleMoreMenu = (key: string): void => {
     </div>
     <!-- 子路由 -->
     <div v-else class="flex-1 min-h-0">
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <KeepAlive
+          :max="4"
+          :include="['StreamingSongs', 'StreamingAlbums', 'StreamingArtists', 'StreamingPlaylists']"
+        >
+          <component :is="Component" />
+        </KeepAlive>
+      </router-view>
     </div>
   </div>
 </template>

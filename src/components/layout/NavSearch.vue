@@ -16,6 +16,7 @@ import IconLucideListMusic from "~icons/lucide/list-music";
 
 const { t, locale } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const data = useDataStore();
 const status = useStatusStore();
 
@@ -25,6 +26,7 @@ const dialogOpen = computed({
   set: (value: boolean) => (status.searchOpen = value),
 });
 const searchQuery = ref("");
+const recognitionOpen = ref(false);
 
 const trimmedQuery = computed(() => searchQuery.value.trim());
 
@@ -94,12 +96,27 @@ const suggestSections = computed(() => {
   ].filter((sec) => sec.items.length > 0);
 });
 
-/** 跳转到搜索页 */
+/**
+ * 提交关键词并保留当前搜索来源
+ * @param raw - 输入的搜索关键词
+ */
 const submit = (raw: string): void => {
   const word = raw.trim();
   if (!word) return;
   data.addSearchHistory(word);
-  router.push({ name: "search", query: { q: word } });
+  router.push({
+    name: "search",
+    query: {
+      q: word,
+      ...(route.name === "search"
+        ? {
+            platform: route.query.platform,
+            plugin: route.query.plugin,
+            source: route.query.source,
+          }
+        : {}),
+    },
+  });
   dialogOpen.value = false;
 };
 
@@ -111,7 +128,7 @@ const onClearHistory = (): void => data.clearSearchHistory();
 /**
  * 建议点击
  * @param kind - 建议类型
- * @param id - 网易云 id
+ * @param id - 歌曲 id
  * @param name - 名称
  */
 const navigateToResource = async (
@@ -273,21 +290,35 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 搜索框触发器 -->
-  <div
-    role="button"
-    :aria-label="t('nav.searchPlaceholder')"
-    class="app-no-drag w-60 h-10 px-4 cursor-pointer flex items-center gap-2 rounded-full border border-solid bg-on-surface/3 border-on-surface/15 hover:bg-on-surface/10 hover:border-on-surface/25 transition-colors duration-250 select-none"
-    @click="dialogOpen = true"
-    @contextmenu.prevent="dialogOpen = true"
-    @mousedown.prevent
-  >
-    <IconLucideSearch class="size-4 text-on-surface-variant/50 shrink-0" />
-    <span class="flex-1 min-w-0 truncate text-base text-on-surface-variant/40">
-      {{ t("nav.searchPlaceholder") }}
-    </span>
+  <!-- 搜索框触发器与听歌识曲 -->
+  <div class="flex items-center gap-2 shrink-0">
+    <div
+      role="button"
+      :aria-label="t('nav.searchPlaceholder')"
+      class="app-no-drag w-60 lt-compact:w-40 lt-md:w-10 h-10 px-4 lt-md:px-0 cursor-pointer flex items-center lt-md:justify-center gap-2 rounded-full border border-solid bg-on-surface/3 border-on-surface/15 hover:bg-on-surface/10 hover:border-on-surface/25 transition-colors duration-250 select-none"
+      @click="dialogOpen = true"
+      @contextmenu.prevent="dialogOpen = true"
+      @mousedown.prevent
+    >
+      <IconLucideSearch class="size-4 text-on-surface-variant/50 shrink-0" />
+      <span class="flex-1 min-w-0 truncate text-base text-on-surface-variant/40 lt-md:hidden">
+        {{ t("nav.searchPlaceholder") }}
+      </span>
+    </div>
+    <SButton
+      class="app-no-drag shrink-0"
+      variant="tertiary"
+      circle
+      :size="40"
+      :icon-size="20"
+      @click="recognitionOpen = true"
+    >
+      <template #icon><IconLucideAudioWaveform /></template>
+    </SButton>
   </div>
-  <!-- 搜索弹窗 -->
+  <!-- 听歌识曲 -->
+  <RecognitionDialog v-model:open="recognitionOpen" />
+  <!-- 搜索 -->
   <SDialog
     v-model:open="dialogOpen"
     :closable="false"

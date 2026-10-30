@@ -1,24 +1,20 @@
 <script setup lang="ts">
-import type { TrackSource } from "@shared/types/player";
+import type { PlaybackContext, TrackSource } from "@shared/types/player";
 import type { ArtistProfile, CoverItem } from "@/types/artist";
 import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
 import { toast } from "@/composables/useToast";
 import { loadArtist as loadArtistService } from "@/services/artistLoader";
 import { fetchArtistSongs } from "@/apis/artist/netease";
+import { fetchQQMusicArtistSongs } from "@/apis/artist/qqmusic";
 import { navigateToAlbum } from "@/utils/navigate";
 import SongList from "@/components/list/SongList.vue";
 import { formatTime } from "@/utils/time";
+import { coverTransitionActive, getCoverPreview } from "@/services/coverTransition";
 import * as player from "@/core/player";
 import artistFallback from "@/assets/images/artist.jpg";
-import IconLucideDisc3 from "~icons/lucide/disc-3";
-import IconLucideListMusic from "~icons/lucide/list-music";
-import IconLucideHourglass from "~icons/lucide/hourglass";
-import IconLucideMusic from "~icons/lucide/music";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import IconLucideListChecks from "~icons/lucide/list-checks";
-import IconMaterialSymbolsFavoriteRounded from "~icons/material-symbols/favorite-rounded";
-import IconMaterialSymbolsFavoriteOutlineRounded from "~icons/material-symbols/favorite-outline-rounded";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -37,6 +33,8 @@ const id = route.params.id as string;
 const artist = shallowRef<ArtistProfile | null>(null);
 /** 正在加载 */
 const loading = ref(false);
+/** 错误信息 */
+const error = ref("");
 /** 取消当次加载 */
 let loadAbort: AbortController | null = null;
 /** 是否还有更多 */
@@ -45,6 +43,13 @@ const loadingMore = ref(false);
 
 /** 在线头像未到位时，用任一曲目的封面顶替 */
 const fallbackTrackCover = computed(() => artist.value?.tracks.find((t) => t.cover)?.cover);
+const preview = getCoverPreview(route.fullPath);
+const artistName = computed(() => artist.value?.name ?? preview?.title);
+const avatarSource = computed(() =>
+  coverTransitionActive.value && preview
+    ? preview.cover
+    : (artist.value?.avatar ?? preview?.cover ?? fallbackTrackCover.value),
+);
 
 /** 折叠状态 */
 const collapsed = ref(false);
@@ -58,27 +63,37 @@ const handleListScroll = (event: Event) => {
   }
 };
 
-/** 加载数据 */
+/** 加载当前服务器的歌手详情，并作废上一轮请求 */
 const loadArtist = async (): Promise<void> => {
   collapsed.value = false;
   loadAbort?.abort();
   const myAbort = new AbortController();
   loadAbort = myAbort;
   loading.value = true;
+  artist.value = null;
+  error.value = "";
   hasMoreSongs.value = false;
 
   try {
     await loadArtistService(source, id, {
+      serverId: typeof route.query.serverId === "string" ? route.query.serverId : undefined,
       fallbackName: typeof route.query.name === "string" ? route.query.name : undefined,
       signal: myAbort.signal,
       onUpdate: (next) => {
         if (myAbort.signal.aborted) return;
         artist.value = next;
-        if (next && source === "netease" && next.tracks.length >= 50) {
+        if (
+          next &&
+          ((source === "netease" && next.tracks.length >= 50) ||
+            (source === "qqmusic" && next.tracks.length < next.trackCount))
+        ) {
           hasMoreSongs.value = true;
         }
       },
     });
+  } catch (err) {
+    if (myAbort.signal.aborted) return;
+    error.value = err instanceof Error ? err.message : String(err);
   } finally {
     if (!myAbort.signal.aborted) loading.value = false;
   }
@@ -86,11 +101,20 @@ const loadArtist = async (): Promise<void> => {
 
 /** 触底加载 */
 const onReachBottom = async (): Promise<void> => {
-  if (source !== "netease" || !hasMoreSongs.value || loadingMore.value || !artist.value) return;
+  if (
+    (source !== "netease" && source !== "qqmusic") ||
+    !hasMoreSongs.value ||
+    loadingMore.value ||
+    !artist.value
+  )
+    return;
   const current = artist.value;
   loadingMore.value = true;
   try {
-    const { tracks, more } = await fetchArtistSongs(decodeURIComponent(id), current.tracks.length);
+    const { tracks, more } =
+      source === "qqmusic"
+        ? await fetchQQMusicArtistSongs(decodeURIComponent(id), current.tracks.length)
+        : await fetchArtistSongs(decodeURIComponent(id), current.tracks.length);
     if (loadAbort?.signal.aborted || artist.value?.id !== current.id) return;
     if (tracks.length === 0) {
       hasMoreSongs.value = false;
@@ -99,7 +123,7 @@ const onReachBottom = async (): Promise<void> => {
     artist.value = {
       ...current,
       tracks: [...current.tracks, ...tracks],
-      trackCount: current.tracks.length + tracks.length,
+      trackCount: source === "qqmusic" ? current.trackCount : current.tracks.length + tracks.length,
     };
     hasMoreSongs.value = more;
   } finally {
@@ -107,7 +131,7 @@ const onReachBottom = async (): Promise<void> => {
   }
 };
 
-loadArtist();
+watch(() => route.query.serverId, loadArtist, { immediate: true });
 
 onBeforeUnmount(() => {
   loadAbort?.abort();
@@ -120,12 +144,19 @@ const totalDuration = computed(() => {
   return total > 0 ? formatTime(total) : "";
 });
 
+const playbackContext = computed<PlaybackContext>(() => ({
+  provider: source,
+  originId: decodeURIComponent(id),
+  originType: "artist",
+  originName: artist.value?.name,
+}));
+
 const handlePlayAll = () => {
   if (!artist.value?.tracks.length) return;
-  player.playFrom(artist.value.tracks, 0);
+  player.playFrom(artist.value.tracks, { context: playbackContext.value });
 };
 
-/** 收藏歌手仅支持网易云 */
+/** 收藏歌手仅支持 NCM */
 const canSubscribeArtist = computed(() => artist.value?.source === "netease");
 
 /** 当前歌手是否已收藏（依据用户收藏歌手列表） */
@@ -205,16 +236,17 @@ const albumItems = computed<CoverItem[]>(() => {
 <template>
   <div class="flex flex-col h-full">
     <!-- 头部信息 -->
-    <div v-if="artist" class="shrink-0 px-5 pb-2">
+    <div v-if="artist || preview" class="shrink-0 px-5 pb-2">
       <div
         class="flex mt-2 transition-[gap,margin] duration-300"
         :class="collapsed ? 'gap-3 mb-3' : 'gap-5 mb-4'"
       >
         <!-- 头像 -->
-        <SImg
-          :src="artist.avatar ?? fallbackTrackCover"
-          :fallback="artistFallback"
-          :alt="artist.name"
+        <DetailCover
+          :src="avatarSource"
+          :fallback="preview?.cover ?? artistFallback"
+          :alt="artistName"
+          data-cover-hero
           class="shrink-0 rounded-full transition-[width,height] duration-300"
           :class="collapsed ? 'size-20' : 'size-40'"
         />
@@ -228,7 +260,7 @@ const albumItems = computed<CoverItem[]>(() => {
               class="font-bold text-on-surface truncate lh-normal transition-[font-size,line-height] duration-300"
               :class="collapsed ? 'text-xl' : 'text-3xl'"
             >
-              {{ artist.name }}
+              {{ artistName }}
             </h1>
             <div
               class="grid transition-[grid-template-rows,opacity] duration-300"
@@ -239,9 +271,13 @@ const albumItems = computed<CoverItem[]>(() => {
               >
                 <span class="flex items-center gap-1">
                   <IconLucideListMusic class="shrink-0" />
-                  {{ t("common.totalSongs", { count: artist.trackCount }) }}
+                  {{
+                    t("common.totalSongs", {
+                      count: artist?.trackCount ?? preview?.trackCount ?? 0,
+                    })
+                  }}
                 </span>
-                <span v-if="artist.albumCount" class="flex items-center gap-1">
+                <span v-if="artist?.albumCount" class="flex items-center gap-1">
                   <IconLucideDisc3 class="shrink-0" />
                   {{ t("common.totalAlbums", { count: artist.albumCount }) }}
                 </span>
@@ -259,7 +295,7 @@ const albumItems = computed<CoverItem[]>(() => {
                 type="primary"
                 variant="secondary"
                 round
-                :disabled="artist.tracks.length === 0 || activeTab !== 'songs'"
+                :disabled="!artist?.tracks.length || activeTab !== 'songs'"
                 @click="handlePlayAll"
               >
                 <template #icon>
@@ -282,12 +318,12 @@ const albumItems = computed<CoverItem[]>(() => {
               </SButton>
               <SDropdownMenu
                 :items="moreMenuItems"
-                :disabled="activeTab !== 'songs'"
+                :disabled="!artist || activeTab !== 'songs'"
                 align="start"
                 @select="handleMoreMenu"
               >
                 <template #trigger>
-                  <SButton variant="secondary" circle :disabled="activeTab !== 'songs'">
+                  <SButton variant="secondary" circle :disabled="!artist || activeTab !== 'songs'">
                     <template #icon>
                       <IconLucideEllipsis />
                     </template>
@@ -334,9 +370,11 @@ const albumItems = computed<CoverItem[]>(() => {
               :items="artist.tracks"
               :search-query="searchQuery"
               :source="source"
+              :playback-context="playbackContext"
               :show-size="source === 'local'"
               :has-more="hasMoreSongs"
               :loading-more="loadingMore"
+              sort-key="artist"
               enable-sort
               @scroll="handleListScroll"
               @change="loadArtist"
@@ -349,7 +387,15 @@ const albumItems = computed<CoverItem[]>(() => {
               :items="albumItems"
               :padding-x="20"
               :padding-bottom="24"
-              @click="(item) => navigateToAlbum(item.title, { source, albumId: item.id })"
+              @click="
+                (item) =>
+                  navigateToAlbum(item.title, {
+                    source,
+                    albumId: item.id,
+                    serverId:
+                      typeof route.query.serverId === 'string' ? route.query.serverId : undefined,
+                  })
+              "
             />
           </div>
         </Transition>
@@ -359,6 +405,18 @@ const albumItems = computed<CoverItem[]>(() => {
         <div class="text-center text-on-surface-variant/60">
           <SLoading class="text-4xl text-primary/70 mb-4 mx-auto block" />
           <div class="text-sm">{{ t("common.loading") }}</div>
+        </div>
+      </div>
+      <!-- 错误态 -->
+      <div v-else-if="error" key="error" class="flex-1 flex items-center justify-center px-6">
+        <div class="text-center text-red-500/85">
+          <IconLucideTriangleAlert class="size-14 mx-auto mb-4 opacity-50" />
+          <div class="text-sm font-medium mb-1">{{ t("search.errorTitle") }}</div>
+          <div class="text-xs opacity-80 break-all max-w-xs mb-4">{{ error }}</div>
+          <SButton type="primary" variant="secondary" @click="loadArtist">
+            <template #icon><IconLucideRefreshCw /></template>
+            {{ t("common.retry") }}
+          </SButton>
         </div>
       </div>
       <!-- 空状态 -->

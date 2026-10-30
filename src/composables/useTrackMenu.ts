@@ -1,5 +1,5 @@
 import type { Ref } from "vue";
-import type { Track } from "@shared/types/player";
+import type { PlaybackContext, Track } from "@shared/types/player";
 import type { QualityLevel } from "@/utils/quality";
 import type { CollectionType } from "@/types/collection";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
@@ -7,10 +7,11 @@ import * as player from "@/core/player";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useStatusStore } from "@/stores/status";
+import { useDownloadStore } from "@/stores/download";
 import { useCopyText } from "@/composables/useCopyText";
 import { toast } from "@/composables/useToast";
 import { buildDownloadQualityItems } from "@/composables/useDownload";
-import { getShareUrl } from "@/utils/format/shareUrl";
+import { getTrackShareUrl } from "@/utils/format/shareUrl";
 import { openExternal } from "@/utils/url";
 import IconPlay from "~icons/lucide/play";
 import IconListEnd from "~icons/lucide/list-end";
@@ -34,6 +35,8 @@ export interface TrackMenuOptions {
   canRemove?: boolean;
   /** 隐藏播放相关菜单项 */
   hidePlayActions?: boolean;
+  /** 播放来源上下文 */
+  playbackContext?: Ref<PlaybackContext | undefined>;
   /** 添加到歌单 */
   onAddToPlaylist?: (track: Track) => void;
   /** 从集合移除回调 */
@@ -62,6 +65,7 @@ export const useTrackMenu = (
   const status = useStatusStore();
   const settings = useSettingsStore();
   const plugins = usePluginsStore();
+  const download = useDownloadStore();
   const { copy } = useCopyText();
   const isPlaylist = options.collectionType === "playlist";
   const isCloudView = options.collectionType === "cloud";
@@ -74,7 +78,7 @@ export const useTrackMenu = (
     const isCue = !!track.value?.cuePath;
     const showCloudRemove = isCloudView && track.value?.cloud === true;
     const canAddToPlaylist = source === "local" || source === "netease";
-    const isOnline = source !== "local" && source !== "streaming";
+    const isOnline = !!getTrackShareUrl(track.value);
     const base: DropdownMenuItem[] = [
       { key: "play", label: t("songList.context.play"), icon: markRaw(IconPlay), show: showPlay },
       {
@@ -98,6 +102,13 @@ export const useTrackMenu = (
         show: isLocal,
       },
       {
+        key: "copyFile",
+        label: t("songList.context.copyFile"),
+        icon: markRaw(IconCopy),
+        separator: !isLocal,
+        show: isLocal || (!!track.value && download.isDownloaded(track.value)),
+      },
+      {
         key: "copyPath",
         label: t("songList.context.copyPath"),
         icon: markRaw(IconCopy),
@@ -114,7 +125,11 @@ export const useTrackMenu = (
         label: t("songList.context.download"),
         icon: markRaw(IconDownload),
         separator: true,
-        show: !isLocal && !!options.onDownload && settings.system.download.enabled,
+        show:
+          !isLocal &&
+          source !== "plugin" &&
+          !!options.onDownload &&
+          settings.system.download.enabled,
         children: buildDownloadQualityItems(t("download.qualityDefault"), "download:"),
       },
       {
@@ -192,6 +207,10 @@ export const useTrackMenu = (
     return [...base, ...pluginGroups];
   });
 
+  /**
+   * 执行所选歌曲菜单操作
+   * @param key - 菜单项标识
+   */
   const handleSelect = async (key: string): Promise<void> => {
     const current = track.value;
     if (!current) return;
@@ -223,10 +242,10 @@ export const useTrackMenu = (
     }
     switch (key) {
       case "play":
-        player.playNow(current);
+        player.playNow(current, options.playbackContext?.value);
         break;
       case "playNext":
-        player.insertToQueue(current);
+        player.insertToQueue(current, undefined, options.playbackContext?.value);
         toast.success(t("songList.toast.addedToNext"));
         break;
       case "addToPlaylist":
@@ -241,6 +260,15 @@ export const useTrackMenu = (
         if (current.cueAudioPath ?? current.path)
           await copy((current.cueAudioPath ?? current.path)!);
         break;
+      case "copyFile":
+        try {
+          const copied = await window.api.system.copyTrackFile(toRaw(current));
+          if (copied) toast.success(t("common.copied"));
+          else toast.error(t("common.copyFailed"));
+        } catch {
+          toast.error(t("common.copyFailed"));
+        }
+        break;
       case "removeFromCollection":
         options.onRemove?.(current);
         break;
@@ -254,7 +282,15 @@ export const useTrackMenu = (
         options.onRemoveFromCloud?.(current);
         break;
       case "searchSame":
-        router.push({ path: "/search", query: { q: current.title } });
+        router.push({
+          path: "/search",
+          query: {
+            q: current.title,
+            ...(current.source === "plugin"
+              ? { plugin: current.plugin?.pluginId, source: current.plugin?.source }
+              : {}),
+          },
+        });
         break;
       case "comments":
         status.showComments(current);
@@ -266,7 +302,7 @@ export const useTrackMenu = (
         await copy(current.id);
         break;
       case "copyUrl":
-        await copy(getShareUrl(current));
+        await copy(getTrackShareUrl(current));
         break;
     }
   };

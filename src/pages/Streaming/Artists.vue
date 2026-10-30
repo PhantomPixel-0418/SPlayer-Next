@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: "StreamingArtists" });
+
 import type { CoverItem } from "@/types/artist";
 import { useStreamingStore } from "@/stores/streaming";
 import { artistToCoverItem } from "@/utils/format/coverItem";
@@ -28,8 +30,15 @@ const items = computed<CoverItem[]>(() =>
   })),
 );
 
+/**
+ * 打开当前服务器的歌手
+ * @param item - 歌手封面条目
+ */
 const handleClick = (item: CoverItem): void => {
-  router.push(`/artist/streaming/${encodeURIComponent(item.id)}`);
+  router.push({
+    path: `/artist/streaming/${encodeURIComponent(item.id)}`,
+    query: { serverId: streaming.activeServerId ?? undefined },
+  });
 };
 </script>
 
