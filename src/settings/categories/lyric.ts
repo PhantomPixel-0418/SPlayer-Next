@@ -6,6 +6,7 @@ import LocalLyricRepoConfig from "@/components/settings/custom/LocalLyricRepoCon
 import LyricSourceOrderConfig from "@/components/settings/custom/LyricSourceOrderConfig.vue";
 import LyricFormatOrderConfig from "@/components/settings/custom/LyricFormatOrderConfig.vue";
 import ExcludeLyricsConfig from "@/components/settings/custom/ExcludeLyricsConfig.vue";
+import LyricEnhancementConfig from "@/components/settings/custom/LyricEnhancementConfig.vue";
 import IconLucideMic2 from "~icons/lucide/mic-2";
 
 /** 来源偏好选项：auto + 全部平台（来自平台总表）+ self */
@@ -238,6 +239,37 @@ const lyricCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "lyric.showWordRomanization" },
           defaultValue: true,
+        },
+      ],
+    },
+    {
+      id: "lyricTranslationPronunciation",
+      items: [
+        {
+          key: "llmTranslation",
+          type: "switch",
+          binding: { store: "settings", path: "lyric.llmTranslation" },
+          defaultValue: false,
+          tag: { text: "Beta" },
+        },
+        {
+          key: "pronunciationOptimization",
+          type: "select",
+          binding: { store: "settings", path: "lyric.pronunciationOptimization" },
+          options: [
+            { value: "off", labelKey: "settings.pronunciationOptimization.off" },
+            { value: "llm", labelKey: "settings.pronunciationOptimization.llm" },
+            { value: "dictionary", labelKey: "settings.pronunciationOptimization.dictionary" },
+          ],
+          defaultValue: "off",
+          tag: { text: "Beta" },
+        },
+        {
+          key: "lyricEnhancementConfig",
+          type: "custom",
+          component: LyricEnhancementConfig,
+          fullWidth: true,
+          searchable: false,
         },
       ],
     },

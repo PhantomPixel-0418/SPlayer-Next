@@ -114,6 +114,20 @@ const showLosslessIcon = computed(() => {
 /** 歌词格式标签 */
 const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO-LRC");
 
+/** 当前展示内容的自动生成来源 */
+const generatedLyricLabels = computed(() => {
+  const labels: string[] = [];
+  if (media.parsedLyric.some((line) => line.generatedTranslation))
+    labels.push(t("settings.lyricEnhancement.generatedTranslation"));
+  if (media.parsedLyric.some((line) => line.generatedPronunciation?.method === "llm"))
+    labels.push(t("settings.lyricEnhancement.generatedPronunciation"));
+  if (media.parsedLyric.some((line) => line.generatedPronunciation?.method === "dictionary"))
+    labels.push(t("settings.lyricEnhancement.dictionaryPronunciation"));
+  if (media.parsedLyric.some((line) => line.generatedPronunciation?.alignment === "line"))
+    labels.push(t("settings.lyricEnhancement.lineFallback"));
+  return labels;
+});
+
 /** 专辑文本 */
 const albumText = computed(() => displayTrack.value?.album?.name ?? "");
 
@@ -224,6 +238,33 @@ const alignItems = computed(() => {
         @click="goToResource(albumTarget)"
       >
         {{ albumText }}
+      </span>
+    </div>
+    <div
+      v-if="
+        !simple &&
+        (generatedLyricLabels.length ||
+          media.lyricEnhancementPending ||
+          media.lyricEnhancementWarnings.length)
+      "
+      class="flex max-w-full flex-wrap items-center gap-1.5 text-xs text-cover/70"
+      aria-live="polite"
+    >
+      <span
+        v-for="label in generatedLyricLabels"
+        :key="label"
+        class="rounded border border-solid border-cover/25 px-1.5 py-0.5"
+      >
+        {{ label }}
+      </span>
+      <span v-if="media.lyricEnhancementPending">
+        {{ t("settings.lyricEnhancement.processing") }}
+      </span>
+      <span
+        v-if="media.lyricEnhancementWarnings.length"
+        :title="media.lyricEnhancementWarnings.join(' · ')"
+      >
+        {{ t("settings.lyricEnhancement.failed") }}
       </span>
     </div>
     <!-- 播放来源 -->

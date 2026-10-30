@@ -1,3 +1,4 @@
+import { registerLyricEnhancementIpc } from "./lyricEnhancement";
 import { registerSystemIpc } from "./system";
 import { registerPlayerIpc } from "./player";
 import { registerConfigIpc } from "./config";
@@ -43,6 +44,7 @@ export const registerIpcHandlers = (onStartupComplete: () => void): void => {
   registerCloudIpc();
   registerCommentsIpc();
   registerLyricsIpc();
+  registerLyricEnhancementIpc();
   registerOpenccIpc();
   registerMotionCoverIpc();
   registerHotkeyIpc();

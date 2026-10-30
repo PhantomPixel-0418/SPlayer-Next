@@ -15,6 +15,7 @@ import {
 } from "lyric-kit";
 import { applyLyricExclude } from "@/utils/lyric/lyricStripper";
 import { applyLyricCjkTransform } from "@/utils/lyric/cjkTransform";
+import { buildLyricEnhancementRequest } from "@/services/lyric/enhancement";
 
 export const useMediaStore = defineStore("media", () => {
   watchLyricPreference();
@@ -36,6 +37,10 @@ export const useMediaStore = defineStore("media", () => {
 
   /** 歌词是否正在加载 */
   const lyricLoading = ref(false);
+
+  /** 当前版本的后台增强状态，不阻塞原歌词显示 */
+  const lyricEnhancementPending = ref(false);
+  const lyricEnhancementWarnings = ref<string[]>([]);
 
   /** 当前歌词行索引，-1 表示无匹配 */
   const lyricIndex = ref(-1);
@@ -70,6 +75,9 @@ export const useMediaStore = defineStore("media", () => {
    * @param newDetail - 新的歌曲详细信息；省略则保留现有 detail
    */
   const setTrack = (newTrack: Track, newDetail?: TrackDetail): void => {
+    transformToken++;
+    lyricEnhancementPending.value = false;
+    lyricEnhancementWarnings.value = [];
     track.value = newTrack;
     if (newDetail) detail.value = newDetail;
   };
@@ -130,6 +138,8 @@ export const useMediaStore = defineStore("media", () => {
   /** 重置歌词状态 */
   const resetLyricState = (): void => {
     transformToken++;
+    lyricEnhancementPending.value = false;
+    lyricEnhancementWarnings.value = [];
     activeLyric.value = null;
     lyricContent.value = null;
     parsedLyric.value = [];
@@ -144,7 +154,13 @@ export const useMediaStore = defineStore("media", () => {
 
   // 从原文重新解析，关闭自动生成后不会残留估算时间戳
   watch(
-    () => [useSettingsStore().lyric.cjkTransform, useSettingsStore().lyric.autoGenerateWordByWord],
+    () => [
+      useSettingsStore().lyric.cjkTransform,
+      useSettingsStore().lyric.autoGenerateWordByWord,
+      useSettingsStore().lyric.llmTranslation,
+      useSettingsStore().lyric.pronunciationOptimization,
+      useSettingsStore().locale,
+    ],
     () => {
       if (activeLyric.value && lyricContent.value) {
         setLyric(activeLyric.value, lyricContent.value);
@@ -158,7 +174,9 @@ export const useMediaStore = defineStore("media", () => {
    * @param input - 主歌词 + 可选翻译 / 音译；传 null 即清空
    */
   const setLyric = (source: LyricData, input: LyricInput | null): void => {
-    const token = ++transformToken;
+    const currentTransformToken = ++transformToken;
+    lyricEnhancementPending.value = false;
+    lyricEnhancementWarnings.value = [];
     let nextLines: LyricLine[] = [];
     let authors: string[] = [];
     let hasWordTiming = false;
@@ -228,16 +246,62 @@ export const useMediaStore = defineStore("media", () => {
     lyricLoading.value = false;
     syncToMain();
 
-    // 应用 OpenCC 简繁转换
+    // 原歌词先展示，较慢的网络增强完成后再替换展示副本
     const cjkMode = settings.lyric.cjkTransform;
-    if (hasContent && cjkMode && cjkMode !== "none") {
-      applyLyricCjkTransform(nextLines, cjkMode).then((transformed) => {
-        if (token !== transformToken) return;
-        parsedLyric.value = transformed;
-        syncToMain();
-      });
+    const needsCjkTransform = hasContent && cjkMode !== "none";
+    const enhancementRequest = buildLyricEnhancementRequest(
+      nextLines,
+      source,
+      track.value,
+      settings.locale,
+      settings.lyric.llmTranslation,
+      settings.lyric.pronunciationOptimization,
+    );
+    const enhancement = enhancementRequest
+      ? window.api.lyricEnhancement.enhance(enhancementRequest).catch(() => ({
+          lines: nextLines,
+          warnings: [
+            settings.locale.startsWith("zh")
+              ? "歌词增强失败，请检查模型和词典配置"
+              : "Lyric enhancement failed; check model and dictionary settings",
+          ],
+        }))
+      : null;
+    lyricEnhancementPending.value = enhancement !== null;
+    if (needsCjkTransform || enhancement) {
+      const displayLines = needsCjkTransform
+        ? applyLyricCjkTransform(nextLines, cjkMode)
+        : Promise.resolve(nextLines);
+      displayLines
+        .then(async (transformed) => {
+          if (currentTransformToken !== transformToken) return;
+          parsedLyric.value = transformed;
+          syncToMain();
+          if (!enhancement) return;
+          const result = await enhancement;
+          if (currentTransformToken !== transformToken) return;
+          const enhanced = needsCjkTransform
+            ? await applyLyricCjkTransform(result.lines, cjkMode)
+            : result.lines;
+          if (currentTransformToken !== transformToken) return;
+          parsedLyric.value = enhanced;
+          lyricEnhancementWarnings.value = result.warnings;
+          lyricEnhancementPending.value = false;
+          syncToMain();
+        })
+        .catch((error) => {
+          if (currentTransformToken !== transformToken) return;
+          console.warn("[media] lyric display transform failed", error);
+          parsedLyric.value = nextLines;
+          lyricEnhancementPending.value = false;
+          syncToMain();
+        });
     }
   };
+
+  useEventListener(window, "lyric-enhancement:changed", () => {
+    if (activeLyric.value && lyricContent.value) setLyric(activeLyric.value, lyricContent.value);
+  });
 
   /**
    * 根据播放时间更新歌词行索引
@@ -250,6 +314,8 @@ export const useMediaStore = defineStore("media", () => {
   /** 清空所有状态 */
   const clear = (): void => {
     transformToken++;
+    lyricEnhancementPending.value = false;
+    lyricEnhancementWarnings.value = [];
     track.value = null;
     playbackContext.value = undefined;
     detail.value = null;
@@ -273,6 +339,8 @@ export const useMediaStore = defineStore("media", () => {
     parsedLyric,
     lyricAuthors,
     lyricLoading,
+    lyricEnhancementPending,
+    lyricEnhancementWarnings,
     lyricIndex,
     setTrack,
     setPlaybackContext,

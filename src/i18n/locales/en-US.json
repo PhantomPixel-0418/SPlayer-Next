@@ -780,6 +780,7 @@
       "lyricContent": "Lyric Content",
       "lyricTTML": "TTML Lyrics",
       "lyricExclude": "Metadata Stripping",
+      "lyricTranslationPronunciation": "Translation & Pronunciation",
       "lyricGeneral": "Content & Style",
       "lyricDisplay": "Display Effects",
       "lyricAMLLOptimize": "Lyric Optimization",
@@ -1051,6 +1052,37 @@
     "detectBackgroundLyrics": {
       "label": "Auto-Detect Background Lyrics",
       "description": "Detect backing vocals from brackets. Disable this if lyrics are misdetected"
+    },
+
+    "llmTranslation": {
+      "label": "LLM Translation Fallback",
+      "description": "Fill only translations missing in the current language; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"
+    },
+    "pronunciationOptimization": {
+      "label": "Pronunciation Optimization",
+      "description": "Choose how pronunciation is optimized; LLM mode sends lyrics to the configured API and may incur charges. Results are cached and marked as AI-generated",
+      "off": "Off",
+      "llm": "Generate with LLM",
+      "dictionary": "Offline dictionary (Japanese)"
+    },
+    "lyricEnhancement": {
+      "modelTitle": "Lyric Enhancement Model",
+      "noModel": "No model selected",
+      "configureModel": "Configure model",
+      "dictionaryTitle": "Offline Pronunciation Dictionary",
+      "dictionaryDescription": "Based on Kuromoji and IPADIC; Japanese pronunciation only. Dictionary size is about 17–21 MB",
+      "installed": "Installed",
+      "notInstalled": "Not installed",
+      "downloadDictionary": "Download dictionary",
+      "removeDictionary": "Remove dictionary",
+      "clearCache": "Clear generated cache",
+      "cacheCleared": "Lyric enhancement cache cleared",
+      "generatedTranslation": "AI translation · generated",
+      "generatedPronunciation": "AI pronunciation · generated",
+      "dictionaryPronunciation": "Dictionary pronunciation · generated",
+      "lineFallback": "Some pronunciations use line timing",
+      "processing": "Enhancing lyrics…",
+      "failed": "Lyric enhancement incomplete"
     },
     "cjkTransform": {
       "label": "Chinese Conversion",

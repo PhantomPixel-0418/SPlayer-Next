@@ -65,8 +65,10 @@
     "font-list": "^2.1.0",
     "he": "^1.2.0",
     "hono": "^4.13.16",
+    "kuromoji": "0.1.2",
     "lyric-kit": "^0.7.0",
     "undici": "^8.12.3",
+    "wanakana": "5.3.1",
     "ws": "^8.22.1",
     "yauzl": "^3.4.0",
     "zod": "^4.6.7"
@@ -89,6 +91,7 @@
     "@pixi/sprite": "^7.4.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/he": "^1.2.3",
+    "@types/kuromoji": "^0.1.3",
     "@types/node": "^24.19.2",
     "@types/sortablejs": "^1.15.9",
     "@types/ws": "^8.18.1",
