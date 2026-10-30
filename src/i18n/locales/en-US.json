@@ -1280,6 +1280,10 @@
       "label": "Lyric Scale",
       "description": "Scale down inactive lines slightly to highlight current line"
     },
+    "enableBalancedWrap": {
+      "label": "Balanced Line Wrap",
+      "description": "Wrap long lines into lines of similar length, breaking at punctuation and spaces first"
+    },
     "lyricAlignment": {
       "label": "Lyric Alignment",
       "description": "Automatically place singers on opposite sides, or align all lines left, center, or right",

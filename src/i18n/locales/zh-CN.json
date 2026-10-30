@@ -1280,6 +1280,10 @@
       "label": "歌词缩放",
       "description": "聚焦播放行，非激活行轻微缩小"
     },
+    "enableBalancedWrap": {
+      "label": "智能换行",
+      "description": "超长歌词行折成长度相近的几行，优先在标点、空格处断开"
+    },
     "lyricAlignment": {
       "label": "歌词水平对齐",
       "description": "自动按演唱声部分左右显示，也可统一靠左、居中或靠右",

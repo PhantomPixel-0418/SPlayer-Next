@@ -158,6 +158,8 @@ interface RenderItem {
   role: "primary" | "secondary";
   text: string;
   line?: LyricLine;
+  /** 翻译行按对应原文行的演唱位置滚动 */
+  timingLine?: LyricLine;
 }
 
 const items = computed<RenderItem[]>(() => {
@@ -175,7 +177,7 @@ const items = computed<RenderItem[]>(() => {
     if (config.doubleLine) {
       const trans = config.showTranslation ? line.translatedLyric : "";
       if (trans) {
-        list.push({ key: `trans-${idx}`, role: "secondary", text: trans });
+        list.push({ key: `trans-${idx}`, role: "secondary", text: trans, timingLine: line });
       } else {
         const next = lyric.value[idx + 1];
         if (next) {
@@ -331,6 +333,7 @@ onBeforeUnmount(() => {
             <TaskbarLyricLine
               :line="item.line"
               :text="item.text"
+              :timing-line="item.timingLine"
               :word-by-word="config.wordByWord && !!item.line"
               :anchor="anchor"
             />
