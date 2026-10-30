@@ -36,6 +36,10 @@ const isHovered = ref(false);
 const maxLayoutWidth = ref(400);
 const wrapperRef = ref<HTMLElement | null>(null);
 let hoverLeaveTimer: number | null = null;
+/** 移出后控件区收起期间的计时器，非空时窗口保持全宽，避免收起动画被裁切截断 */
+let collapseTimer: number | null = null;
+/** 与 .controls-wrapper 的 max-width 过渡时长一致 */
+const CONTROLS_COLLAPSE_MS = 450;
 let widthReportRaf = 0;
 let lastReportedWidth = 0;
 
@@ -59,7 +63,7 @@ const reportContentWidth = (): void => {
   widthReportRaf = 0;
   const wrapper = wrapperRef.value;
   if (!wrapper) return;
-  if (isHovered.value) {
+  if (isHovered.value || collapseTimer !== null) {
     const targetWidth = Math.ceil(maxLayoutWidth.value);
     if (targetWidth === lastReportedWidth) return;
     lastReportedWidth = targetWidth;
@@ -100,6 +104,10 @@ const setContentHovered = (hovered: boolean): void => {
     window.clearTimeout(hoverLeaveTimer);
     hoverLeaveTimer = null;
   }
+  if (collapseTimer !== null) {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
   if (hovered) {
     isHovered.value = true;
     nextTick(scheduleContentWidthReport);
@@ -108,7 +116,10 @@ const setContentHovered = (hovered: boolean): void => {
   hoverLeaveTimer = window.setTimeout(() => {
     hoverLeaveTimer = null;
     isHovered.value = false;
-    nextTick(scheduleContentWidthReport);
+    collapseTimer = window.setTimeout(() => {
+      collapseTimer = null;
+      scheduleContentWidthReport();
+    }, CONTROLS_COLLAPSE_MS);
   }, 40);
 };
 
@@ -237,6 +248,7 @@ onBeforeUnmount(() => {
     window.clearTimeout(hoverLeaveTimer);
     hoverLeaveTimer = null;
   }
+  if (collapseTimer !== null) window.clearTimeout(collapseTimer);
   for (const off of unsubscribers) off();
 });
 </script>
