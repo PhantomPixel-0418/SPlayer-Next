@@ -102,10 +102,7 @@ const applyContentShape = (): void => {
       Math.round(adjustOccupiedSpace ? (contentWidth ?? region.maxWidth) : region.maxWidth),
     ),
   );
-  if (shapeWidth >= region.maxWidth) {
-    win.setShape([]);
-    return;
-  }
+  // 小任务栏可能低于 Chromium 最小窗口高度，始终按任务栏区域裁切渲染和命中范围
   const x = region.anchor === "right" ? region.maxWidth - shapeWidth : 0;
   win.setShape([{ x, y: 0, width: shapeWidth, height: region.height }]);
 };
@@ -210,6 +207,7 @@ const applyLayout = (layout: JsTaskbarLayout): void => {
     isLight: layout.extra.isLight,
     anchor,
     maxWidth: windowWidth,
+    height: availHeight,
   });
 };
 
