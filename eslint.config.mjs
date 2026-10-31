@@ -69,6 +69,8 @@ export default defineConfig(
     files: ["**/*.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
+      // CommonJS 脚本无法标注返回类型，由 JSDoc 说明
+      "@typescript-eslint/explicit-function-return-type": "off",
     },
   },
   eslintConfigPrettier,

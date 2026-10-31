@@ -213,6 +213,7 @@ export const useSettingsStore = defineStore(
       showWordRomanization: true,
       enableScale: true,
       bgAlwaysBelow: false,
+      enableBalancedWrap: true,
       enableWordHighlight: true,
       enableFloatAnimation: false,
       enableEmphasizeEffect: false,
