@@ -490,8 +490,11 @@ const showComments = (): void => {
           </Transition>
           <!-- 播放队列 -->
           <div
-            class="absolute inset-y-0 right-0 pl-4 py-6 flex items-center"
-            :class="status.fullQueueOpen ? '' : 'pointer-events-none'"
+            class="absolute inset-y-0 right-0 py-6 flex items-center transition-[width,padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            :class="[
+              !showCover ? 'pl-20' : 'pl-4',
+              status.fullQueueOpen ? '' : 'pointer-events-none',
+            ]"
             :style="{
               width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
             }"
