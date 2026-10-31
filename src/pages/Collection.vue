@@ -269,13 +269,13 @@ onBeforeUnmount(() => {
           />
           <!-- 播放次数徽标 -->
           <div
-            v-show="(collection?.playCount ?? 0) > 0"
+            v-show="header.playCount && header.playCount > 0"
             class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/60 px-1.5 py-1 pointer-events-none transition-opacity duration-200"
             :class="collapsed ? 'opacity-0' : 'opacity-100'"
           >
             <IconLucidePlay class="size-3 fill-current text-white" />
             <span class="text-xs font-medium text-white tabular-nums">
-              {{ formatPlayCount(collection?.playCount ?? 0, locale) }}
+              {{ formatPlayCount(header.playCount ?? 0, locale) }}
             </span>
           </div>
         </div>
