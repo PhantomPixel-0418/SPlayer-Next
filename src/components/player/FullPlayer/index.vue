@@ -33,6 +33,7 @@ const {
   heartMode,
   fmMode,
   showLyric,
+  showCover,
 } = storeToRefs(status);
 
 const { timeDisplay, toggleTimeFormat } = useTimeFormat();
@@ -246,17 +247,27 @@ const {
   openPicker,
 } = usePlaylistPicker();
 
-const lyricToggleDisabled = computed(() => !hasLyric.value || fullscreenCover.value);
+const lyricToggleDisabled = computed(() => !hasLyric.value);
 const lyricToggleActive = computed(
-  () => showLyric.value && hasLyric.value && !status.fullQueueOpen && !fullscreenCover.value,
+  () => (showLyric.value || !showCover.value) && hasLyric.value && !status.fullQueueOpen,
 );
 
+/** 按封面与歌词的三种显示状态循环切换 */
 const toggleLyric = (): void => {
   if (status.fullQueueOpen) {
     status.fullQueueOpen = false;
     showLyric.value = true;
+    showCover.value = true;
+    return;
+  }
+  if (!showCover.value) {
+    showCover.value = true;
+    showLyric.value = true;
+  } else if (showLyric.value) {
+    showLyric.value = false;
   } else {
-    showLyric.value = !showLyric.value;
+    showCover.value = false;
+    showLyric.value = true;
   }
 };
 
@@ -290,7 +301,7 @@ const showComments = (): void => {
         <!-- 背景 -->
         <PlayerBackground :visible="playerVisible" :active="visualizerMounted" />
         <!-- 全屏封面 -->
-        <div v-if="fullscreenCover" class="absolute inset-y-0 left-0 w-[60%]">
+        <div v-if="fullscreenCover && showCover" class="absolute inset-y-0 left-0 w-[60%]">
           <PlayerCover fullscreen />
         </div>
         <!-- 底部频谱 -->
@@ -300,12 +311,12 @@ const showComments = (): void => {
         />
         <!-- 顶/底栏渐变遮罩（全屏封面模式） -->
         <div
-          v-if="fullscreenCover"
+          v-if="fullscreenCover && showCover"
           class="cover-mask-top absolute top-0 inset-x-0 h-20 z-5 pointer-events-none transition-opacity duration-400"
           :class="immersive ? 'opacity-0' : 'opacity-100'"
         />
         <div
-          v-if="fullscreenCover"
+          v-if="fullscreenCover && showCover"
           class="cover-mask-bottom absolute bottom-0 inset-x-0 h-48 z-5 pointer-events-none transition-opacity duration-400"
           :class="immersive ? 'opacity-0' : 'opacity-100'"
         />
@@ -343,8 +354,8 @@ const showComments = (): void => {
         <div class="absolute top-14 inset-x-0 bottom-20" @mousemove="onMainMove">
           <!-- 左侧 -->
           <div
-            v-if="!fullscreenCover"
-            class="absolute inset-y-0 left-0 flex items-center justify-center px-12 transition-transform duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            v-if="!fullscreenCover && showCover"
+            class="absolute inset-y-0 left-0 flex items-center justify-center pl-20 pr-12 transition-transform duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
             :style="{
               width: coverWidth,
               transform: coverCentered ? 'translateX(calc(50vw - 50%))' : undefined,
@@ -363,24 +374,36 @@ const showComments = (): void => {
           </div>
           <!-- 右侧 -->
           <div
+            v-if="showLyric || (fullscreenCover && !showCover)"
             class="group absolute inset-y-0 right-0 pr-20 flex flex-col transition-opacity duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            :class="
+            :class="[
+              !showCover ? 'pl-20' : '',
               coverCentered || status.fullQueueOpen
                 ? 'opacity-0 pointer-events-none'
-                : 'opacity-100'
-            "
-            :style="{ width: fullscreenCover ? '50%' : `calc(100% - ${coverWidth})` }"
+                : 'opacity-100',
+            ]"
+            :style="{
+              width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
+            }"
           >
             <!-- 全屏封面 -->
             <div
-              v-if="fullscreenCover"
+              v-if="fullscreenCover && showCover"
               class="shrink-0 pt-2 pb-6 pl-[calc(1em-0.5rem)]"
               :style="{ fontSize: lyricFontSize }"
             >
               <PlayerData align="left" simple />
             </div>
+            <div
+              v-if="!showCover"
+              class="shrink-0 pt-2 pb-6 text-center"
+              :style="{ fontSize: lyricFontSize }"
+            >
+              <PlayerData align="center" simple />
+            </div>
             <!-- 歌词容器 -->
             <div
+              v-if="showLyric"
               class="lyric-area relative flex-1 min-h-0"
               :style="{
                 '--lp-credit-opacity': '1',
@@ -418,7 +441,9 @@ const showComments = (): void => {
           <div
             class="absolute inset-y-0 right-0 pl-4 py-6 flex items-center"
             :class="status.fullQueueOpen ? '' : 'pointer-events-none'"
-            :style="{ width: fullscreenCover ? '50%' : `calc(100% - ${coverWidth})` }"
+            :style="{
+              width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
+            }"
           >
             <Transition
               enter-active-class="transition-opacity duration-600 ease-[cubic-bezier(0.4,0,0.2,1)]"
