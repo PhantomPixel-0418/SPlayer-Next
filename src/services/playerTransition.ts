@@ -6,6 +6,8 @@ export const fullPlayerReady = shallowRef(false);
 export const playerTransition = shallowRef<ViewTransition | null>(null);
 export const playerTransitionActive = computed(() => playerTransition.value !== null);
 const playerModeTransition = shallowRef<ViewTransition | null>(null);
+/** 播放器三态切换的共享元素过渡是否进行中 */
+export const playerModeTransitionActive = computed(() => playerModeTransition.value !== null);
 let covers: HTMLElement[] = [];
 
 /** 取消播放器三态切换的共享元素快照 */
@@ -78,11 +80,14 @@ export const transitionPlayerMode = (update: () => void): void => {
  * @param expanded - 是否展开播放器
  */
 export const setPlayerExpanded = (expanded: boolean): void => {
+  // 三态切换过渡在飞时放弃共享元素匹配，避免抢占快照导致封面跳位
+  const modeTransitionActive = playerModeTransitionActive.value;
   cancelPlayerTransition();
   const status = useStatusStore();
   if (status.isPlayerExpanded === expanded) return;
   const settings = useSettingsStore();
   if (
+    modeTransitionActive ||
     !settings.appearance.seamlessTransition ||
     settings.reducedMotion ||
     !document.startViewTransition ||

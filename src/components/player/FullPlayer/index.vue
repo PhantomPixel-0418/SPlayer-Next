@@ -15,6 +15,7 @@ import Lyrics from "@/components/player/Lyrics/index.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
 import {
+  playerModeTransitionActive,
   playerTransitionActive,
   setPlayerExpanded,
   transitionPlayerMode,
@@ -61,25 +62,19 @@ let visualizerIdle = 0;
 let lyricFrameLimitTimeout: ReturnType<typeof setTimeout> | undefined;
 const LYRIC_LAYOUT_TRANSITION_MS = 250;
 const AMLL_TRANSITION_FPS_LIMIT = 24;
-/** 常规歌词渲染帧率，布局过渡结束后恢复到此值 */
-const AMLL_NORMAL_FPS = 60;
-const lyricFrameRateLimit = ref(AMLL_NORMAL_FPS);
+/** 布局过渡期间限制的歌词帧率，未限帧时为 undefined（AMLL 满帧） */
+const lyricFrameRateLimit = ref<number | undefined>(undefined);
 let enterPrepared = false;
 const lyricTimePushGate: FrameRateGate = {};
 const visibility = useDocumentVisibility();
 
-/** 布局过渡期间临时限制 AMLL 更新频率，结束后恢复常规帧率 */
+/** 仅在共享元素布局过渡进行中临时限制 AMLL 更新频率，结束后恢复满帧 */
 const limitLyricFramesDuringTransition = (): void => {
-  if (settings.reducedMotion) {
-    if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
-    lyricFrameLimitTimeout = undefined;
-    lyricFrameRateLimit.value = AMLL_NORMAL_FPS;
-    return;
-  }
+  if (!playerModeTransitionActive.value) return;
   if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
   lyricFrameRateLimit.value = AMLL_TRANSITION_FPS_LIMIT;
   lyricFrameLimitTimeout = setTimeout(() => {
-    lyricFrameRateLimit.value = AMLL_NORMAL_FPS;
+    lyricFrameRateLimit.value = undefined;
     lyricFrameLimitTimeout = undefined;
   }, LYRIC_LAYOUT_TRANSITION_MS);
 };
@@ -344,7 +339,6 @@ const toggleLyric = (): void => {
       status.fullQueueOpen = false;
       limitLyricFramesDuringTransition();
       showLyric.value = true;
-      showCover.value = true;
       return;
     }
     if (!showCover.value) {
@@ -610,7 +604,12 @@ const showComments = (): void => {
               status.fullQueueOpen ? '' : 'pointer-events-none',
             ]"
             :style="{
-              width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
+              width:
+                !showCover || coverExpanded
+                  ? '100%'
+                  : fullscreenCover
+                    ? '50%'
+                    : `calc(100% - ${coverWidth})`,
             }"
           >
             <Transition
