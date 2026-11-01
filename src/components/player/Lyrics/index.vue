@@ -11,6 +11,8 @@ const props = withDefaults(
     initialTime?: number;
     /** 是否正在播放 */
     playing?: boolean;
+    /** 临时限制歌词引擎更新频率 */
+    frameRateLimit?: number;
   }>(),
   {
     initialTime: 0,
@@ -69,6 +71,7 @@ defineExpose({
     :lyric-lines="props.lyricLines"
     :initial-time="props.initialTime"
     :playing="props.playing"
+    :frame-rate-limit="props.frameRateLimit"
     :align-position="settings.lyric.alignPosition"
     :word-fade-width="settings.lyric.wordFadeWidth"
     :hide-passed-lines="settings.lyric.hidePassedLines"

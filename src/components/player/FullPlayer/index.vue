@@ -15,6 +15,9 @@ import Lyrics from "@/components/player/Lyrics/index.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
 import { playerTransitionActive, setPlayerExpanded } from "@/services/playerTransition";
+import { shouldUpdateFrame, type FrameRateGate } from "@/utils/lyric/frameRateGate";
+import { isLyricToggleDisabled, shouldCenterCover, shouldTreatLyricsAsReady } from "./displayState";
+import { captureTrackInfoHeight, resetTrackInfoHeight } from "./trackInfoTransition";
 
 const status = useStatusStore();
 const media = useMediaStore();
@@ -42,12 +45,28 @@ const { snapToNearestLyric } = useProgressLyric();
 const lyricRef = ref<InstanceType<typeof Lyrics>>();
 const lyricMounted = ref(false);
 const lyricReady = ref(false);
+const lyricEngineReady = ref(false);
 const playerVisible = ref(false);
 const visualizerMounted = ref(false);
 const initialLyricTimeMs = ref(0);
 let visualizerIdle = 0;
+let lyricFrameLimitTimeout: ReturnType<typeof setTimeout> | undefined;
+const lyricFrameRateLimit = ref<number>();
+const LYRIC_LAYOUT_TRANSITION_MS = 250;
+const AMLL_TRANSITION_FPS_LIMIT = 24;
 let enterPrepared = false;
+const lyricTimePushGate: FrameRateGate = {};
 const visibility = useDocumentVisibility();
+
+/** 布局过渡期间临时限制 AMLL 更新频率 */
+const limitLyricFramesDuringTransition = (): void => {
+  if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
+  lyricFrameRateLimit.value = AMLL_TRANSITION_FPS_LIMIT;
+  lyricFrameLimitTimeout = setTimeout(() => {
+    lyricFrameRateLimit.value = undefined;
+    lyricFrameLimitTimeout = undefined;
+  }, LYRIC_LAYOUT_TRANSITION_MS);
+};
 
 /** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白 */
 const displayTrack = computed(() => media.track ?? status.currentTrack);
@@ -56,9 +75,17 @@ const hasTrack = computed(() => !!displayTrack.value);
 
 /** 精确播放时间（毫秒） */
 const { start: startTick, stop: stopTick } = usePlaybackTime((currentMs) => {
-  if (!status.trackLoading && !media.lyricLoading) {
-    lyricRef.value?.setCurrentTime(currentMs + status.lyricOffsetMs, player.isSeeking());
+  if (status.trackLoading || media.lyricLoading || !showLyric.value) return;
+
+  const isSeeking = player.isSeeking();
+  const frameRateLimit = settings.lyric.engine === "amll" ? lyricFrameRateLimit.value : undefined;
+  if (frameRateLimit) {
+    if (!shouldUpdateFrame(performance.now(), lyricTimePushGate, frameRateLimit, isSeeking)) return;
+  } else {
+    lyricTimePushGate.nextUpdateAt = undefined;
   }
+
+  lyricRef.value?.setCurrentTime(currentMs + status.lyricOffsetMs, isSeeking);
 });
 
 /** 歌词首帧就绪后在空闲时段创建可视化，避免布局测量与 WebGL 初始化争抢一帧 */
@@ -87,11 +114,28 @@ const scheduleVisualizers = (): void => {
   );
 };
 
+/** 标记当前歌词布局已就绪并安排可视化初始化 */
+const markLyricReady = (): void => {
+  lyricReady.value = true;
+  scheduleVisualizers();
+};
+
 /** 歌词完成首次布局后安排可视化初始化 */
 const onLyricReady = (): void => {
   if (!isPlayerExpanded.value) return;
-  lyricReady.value = true;
-  scheduleVisualizers();
+  lyricEngineReady.value = true;
+  markLyricReady();
+};
+
+/** 恢复显示中的歌词并校准播放位置 */
+const resumeLyricDisplay = (): void => {
+  lyricRef.value?.setCurrentTime(getCurrentTime() + status.lyricOffsetMs);
+  lyricRef.value?.resume();
+};
+
+/** 隐藏歌词时冻结歌词引擎，避免后台持续渲染 */
+const freezeLyricDisplay = (): void => {
+  lyricRef.value?.freeze();
 };
 
 watch(visibility, (value) => {
@@ -110,7 +154,7 @@ const preparePlayerContent = (): void => {
     lyricRef.value?.resume();
     startTick();
     if (lyricReady.value) scheduleVisualizers();
-    else if (!hasLyric.value) onLyricReady();
+    else if (shouldTreatLyricsAsReady(showLyric.value, hasLyric.value)) markLyricReady();
   });
 };
 
@@ -155,10 +199,14 @@ const onAfterLeave = () => {
   playerVisible.value = false;
   lyricMounted.value = false;
   lyricReady.value = false;
+  lyricEngineReady.value = false;
   visualizerMounted.value = false;
 };
 
-onBeforeUnmount(() => cancelIdleCallback(visualizerIdle));
+onBeforeUnmount(() => {
+  cancelIdleCallback(visualizerIdle);
+  if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
+});
 
 // 重新挂载时，刷新初始时间；加载结束仍无歌词时歌词组件会卸载，按就绪处理
 watch(hasLyric, (value) => {
@@ -167,7 +215,13 @@ watch(hasLyric, (value) => {
     initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
     return;
   }
-  onLyricReady();
+  lyricEngineReady.value = false;
+  if (isPlayerExpanded.value) markLyricReady();
+});
+
+watch(showLyric, (visible) => {
+  if (!visible || !lyricMounted.value) return;
+  initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
 });
 
 // 歌词变化时先推送精确时间
@@ -190,10 +244,19 @@ watch(
 
 const fullscreenCover = computed(() => settings.player.coverLayout === "fullscreen");
 const coverWidth = computed(() => `${settings.player.coverLyricRatio * 100}%`);
+const lyricPanelVisible = computed(
+  () => showLyric.value || (fullscreenCover.value && !showCover.value),
+);
 
 const coverCentered = computed(() => {
-  if (fullscreenCover.value || status.fullQueueOpen) return false;
-  return !showLyric.value || (settings.player.autoCenterCover && !hasLyric.value);
+  return shouldCenterCover(
+    fullscreenCover.value,
+    status.fullQueueOpen,
+    showLyric.value,
+    settings.player.autoCenterCover,
+    hasLyric.value,
+    showCover.value,
+  );
 });
 
 const handleLyricSeek = async (timeMs: number): Promise<void> => {
@@ -247,25 +310,29 @@ const {
   openPicker,
 } = usePlaylistPicker();
 
-const lyricToggleDisabled = computed(() => !hasLyric.value);
+const lyricToggleDisabled = computed(() => isLyricToggleDisabled(hasLyric.value, showCover.value));
 const lyricToggleActive = computed(
-  () => (showLyric.value || !showCover.value) && hasLyric.value && !status.fullQueueOpen,
+  () => (!showCover.value || (showLyric.value && hasLyric.value)) && !status.fullQueueOpen,
 );
 
 /** 按封面与歌词的三种显示状态循环切换 */
 const toggleLyric = (): void => {
   if (status.fullQueueOpen) {
     status.fullQueueOpen = false;
+    limitLyricFramesDuringTransition();
     showLyric.value = true;
     showCover.value = true;
     return;
   }
   if (!showCover.value) {
+    limitLyricFramesDuringTransition();
     showCover.value = true;
     showLyric.value = true;
   } else if (showLyric.value) {
+    limitLyricFramesDuringTransition();
     showLyric.value = false;
   } else {
+    limitLyricFramesDuringTransition();
     showCover.value = false;
     showLyric.value = true;
   }
@@ -302,9 +369,9 @@ const showComments = (): void => {
         <PlayerBackground :visible="playerVisible" :active="visualizerMounted" />
         <!-- 全屏封面 -->
         <Transition
-          enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          enter-active-class="transition-opacity duration-250 ease-linear"
           enter-from-class="opacity-0"
-          leave-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          leave-active-class="transition-opacity duration-250 ease-linear"
           leave-to-class="opacity-0"
         >
           <div v-if="fullscreenCover && showCover" class="absolute inset-y-0 left-0 w-[60%]">
@@ -318,28 +385,36 @@ const showComments = (): void => {
         />
         <!-- 顶/底栏渐变遮罩（全屏封面模式） -->
         <Transition
-          enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          enter-active-class="transition-opacity duration-250 ease-linear"
           enter-from-class="opacity-0"
-          leave-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          leave-active-class="transition-opacity duration-250 ease-linear"
           leave-to-class="opacity-0"
         >
           <div
             v-if="fullscreenCover && showCover"
-            class="cover-mask-top absolute top-0 inset-x-0 h-20 z-5 pointer-events-none transition-opacity duration-400"
-            :class="immersive ? 'opacity-0' : 'opacity-100'"
-          />
+            class="absolute top-0 inset-x-0 h-20 z-5 pointer-events-none"
+          >
+            <div
+              class="cover-mask-top absolute inset-0 transition-opacity duration-400"
+              :class="immersive ? 'opacity-0' : 'opacity-100'"
+            />
+          </div>
         </Transition>
         <Transition
-          enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          enter-active-class="transition-opacity duration-250 ease-linear"
           enter-from-class="opacity-0"
-          leave-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          leave-active-class="transition-opacity duration-250 ease-linear"
           leave-to-class="opacity-0"
         >
           <div
             v-if="fullscreenCover && showCover"
-            class="cover-mask-bottom absolute bottom-0 inset-x-0 h-48 z-5 pointer-events-none transition-opacity duration-400"
-            :class="immersive ? 'opacity-0' : 'opacity-100'"
-          />
+            class="absolute bottom-0 inset-x-0 h-48 z-5 pointer-events-none"
+          >
+            <div
+              class="cover-mask-bottom absolute inset-0 transition-opacity duration-400"
+              :class="immersive ? 'opacity-0' : 'opacity-100'"
+            />
+          </div>
         </Transition>
         <!-- 顶栏 -->
         <div
@@ -375,14 +450,14 @@ const showComments = (): void => {
         <div class="absolute top-14 inset-x-0 bottom-20" @mousemove="onMainMove">
           <!-- 左侧 -->
           <Transition
-            enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            enter-active-class="transition-opacity duration-250 ease-linear"
             enter-from-class="opacity-0"
-            leave-active-class="transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            leave-active-class="transition-opacity duration-250 ease-linear"
             leave-to-class="opacity-0"
           >
             <div
               v-if="!fullscreenCover && showCover"
-              class="absolute inset-y-0 left-0 flex items-center justify-center pl-20 pr-12 transition-[width,opacity,transform] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+              class="absolute inset-y-0 left-0 flex items-center justify-center pl-20 pr-12 transition-[width,opacity,transform] duration-250 ease-linear"
               :style="{
                 width: coverWidth,
                 transform: coverCentered ? 'translateX(calc(50vw - 50%))' : undefined,
@@ -401,59 +476,50 @@ const showComments = (): void => {
             </div>
           </Transition>
           <!-- 右侧 -->
-          <Transition
-            enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            enter-from-class="opacity-0"
-            leave-active-class="transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            leave-to-class="opacity-0"
+          <div
+            class="group absolute inset-y-0 right-0 pr-20 flex flex-col transition-[width,padding,opacity] duration-250 ease-linear"
+            :class="[
+              !showCover ? 'pl-20' : '',
+              !lyricPanelVisible || coverCentered || status.fullQueueOpen
+                ? 'opacity-0 pointer-events-none'
+                : 'opacity-100',
+            ]"
+            :style="{
+              width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
+            }"
+            :inert="!lyricPanelVisible || coverCentered || status.fullQueueOpen"
           >
-            <div
-              v-if="showLyric || (fullscreenCover && !showCover)"
-              class="group absolute inset-y-0 right-0 pr-20 flex flex-col transition-[width,padding,opacity] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
-              :class="[
-                !showCover ? 'pl-20' : '',
-                coverCentered || status.fullQueueOpen
-                  ? 'opacity-0 pointer-events-none'
-                  : 'opacity-100',
-              ]"
-              :style="{
-                width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
-              }"
-            >
+            <div class="flex flex-col flex-1 min-h-0 min-w-0">
               <!-- 全屏封面 -->
               <Transition
-                enter-active-class="transition-[opacity,transform] duration-400 ease-out"
-                enter-from-class="opacity-0 translate-y-2"
-                leave-active-class="transition-[opacity,transform] duration-300 ease-in"
-                leave-to-class="opacity-0 -translate-y-2"
+                name="lyric-track-info"
+                enter-to-class="lyric-track-info-enter-to"
+                leave-from-class="lyric-track-info-leave-from"
+                @before-enter="captureTrackInfoHeight"
+                @after-enter="resetTrackInfoHeight"
+                @before-leave="captureTrackInfoHeight"
               >
                 <div
-                  v-if="fullscreenCover && showCover"
-                  key="cover-track-info"
-                  class="shrink-0 pt-2 pb-6 pl-[calc(1em-0.5rem)]"
+                  v-if="fullscreenCover || !showCover"
+                  class="lyric-track-info shrink-0 pt-2 pb-6"
+                  :class="showCover ? 'pl-[calc(1em-0.5rem)]' : 'text-center'"
                   :style="{ fontSize: lyricFontSize }"
                 >
-                  <PlayerData align="left" simple />
-                </div>
-                <div
-                  v-else-if="!showCover"
-                  key="lyric-track-info"
-                  class="shrink-0 pt-2 pb-6 text-center"
-                  :style="{ fontSize: lyricFontSize }"
-                >
-                  <PlayerData align="center" simple />
+                  <PlayerData :align="showCover ? 'left' : 'center'" simple />
                 </div>
               </Transition>
               <!-- 歌词容器 -->
               <Transition
-                enter-active-class="transition-opacity duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
-                enter-from-class="opacity-0"
-                leave-active-class="transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-                leave-to-class="opacity-0"
+                enter-active-class="lyric-area-transition-active"
+                enter-from-class="lyric-area-transition-from"
+                leave-active-class="lyric-area-transition-active"
+                leave-to-class="lyric-area-transition-from"
+                @after-enter="resumeLyricDisplay"
+                @before-leave="freezeLyricDisplay"
               >
                 <div
-                  v-if="showLyric"
-                  class="lyric-area relative flex-1 min-h-0"
+                  v-show="showLyric"
+                  class="lyric-area relative min-h-0"
                   :style="{
                     '--lp-credit-opacity': '1',
                     fontSize: lyricFontSize,
@@ -468,11 +534,12 @@ const showComments = (): void => {
                   }"
                 >
                   <Lyrics
-                    v-if="lyricMounted && hasLyric"
+                    v-if="lyricMounted && hasLyric && (showLyric || lyricEngineReady)"
                     ref="lyricRef"
                     :lyric-lines="media.parsedLyric"
                     :initial-time="initialLyricTimeMs"
                     :playing="isPlaying"
+                    :frame-rate-limit="lyricFrameRateLimit"
                     @seek="handleLyricSeek"
                     @ready="onLyricReady"
                   />
@@ -484,14 +551,17 @@ const showComments = (): void => {
                   </div>
                 </div>
               </Transition>
-              <!-- 歌词侧边工具栏 -->
-              <LyricActions :immersive="immersive" />
             </div>
-          </Transition>
+            <!-- 歌词侧边工具栏 -->
+            <LyricActions v-if="lyricPanelVisible" :immersive="immersive" />
+          </div>
           <!-- 播放队列 -->
           <div
-            class="absolute inset-y-0 right-0 pl-4 py-6 flex items-center"
-            :class="status.fullQueueOpen ? '' : 'pointer-events-none'"
+            class="absolute inset-y-0 right-0 py-6 flex items-center transition-[width,padding] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            :class="[
+              !showCover ? 'pl-20' : 'pl-4',
+              status.fullQueueOpen ? '' : 'pointer-events-none',
+            ]"
             :style="{
               width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
             }"
@@ -684,6 +754,7 @@ const showComments = (): void => {
 
 <style scoped>
 .lyric-area {
+  flex: 1 1 0%;
   filter: drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.2));
   mask: linear-gradient(
     180deg,
@@ -694,6 +765,54 @@ const showComments = (): void => {
     hsla(0, 0%, 100%, 0.6) 85%,
     hsla(0, 0%, 100%, 0)
   );
+}
+
+.lyric-area-transition-active {
+  transition:
+    flex-grow 250ms linear,
+    opacity 250ms linear;
+}
+
+.lyric-area-transition-from {
+  flex: 0 1 0%;
+  opacity: 0;
+}
+
+.lyric-track-info {
+  overflow: clip;
+}
+
+.lyric-track-info-enter-active,
+.lyric-track-info-leave-active {
+  transition:
+    height 250ms linear,
+    padding 250ms linear,
+    opacity 250ms linear,
+    transform 250ms linear;
+}
+
+.lyric-track-info-enter-from {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+.lyric-track-info-enter-to {
+  height: var(--lyric-track-info-height);
+}
+
+.lyric-track-info-leave-from {
+  height: var(--lyric-track-info-height, auto);
+}
+
+.lyric-track-info-leave-to {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  transform: translateX(24px);
 }
 
 /* 顶部/底部遮罩：多段非线性 alpha，避免暗色渐变出色阶 */

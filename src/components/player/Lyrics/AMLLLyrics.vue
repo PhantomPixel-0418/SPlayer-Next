@@ -36,6 +36,8 @@ const props = withDefaults(
     bgAlwaysBelow?: boolean;
     /** 挂载时的初始播放时间（毫秒） */
     initialTime?: number;
+    /** 临时限制渲染更新频率 */
+    frameRateLimit?: number;
   }>(),
   {
     playing: false,
@@ -173,7 +175,10 @@ const { resume: resumeRaf, pause: pauseRaf } = useRafFn(
   ({ delta }) => {
     playerRef.value?.update(delta);
   },
-  { immediate: false },
+  {
+    immediate: false,
+    fpsLimit: computed(() => props.frameRateLimit ?? null),
+  },
 );
 
 // 页面隐藏时停止渲染循环，恢复时校准时间线
