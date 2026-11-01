@@ -14,7 +14,11 @@ import { useProgressLyric } from "@/composables/useProgressLyric";
 import Lyrics from "@/components/player/Lyrics/index.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
-import { playerTransitionActive, setPlayerExpanded } from "@/services/playerTransition";
+import {
+  playerTransitionActive,
+  setPlayerExpanded,
+  transitionPlayerMode,
+} from "@/services/playerTransition";
 import { shouldUpdateFrame, type FrameRateGate } from "@/utils/lyric/frameRateGate";
 import {
   isFullscreenCoverExpanded,
@@ -66,6 +70,12 @@ const visibility = useDocumentVisibility();
 
 /** 布局过渡期间临时限制 AMLL 更新频率，结束后恢复常规帧率 */
 const limitLyricFramesDuringTransition = (): void => {
+  if (settings.reducedMotion) {
+    if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
+    lyricFrameLimitTimeout = undefined;
+    lyricFrameRateLimit.value = AMLL_NORMAL_FPS;
+    return;
+  }
   if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
   lyricFrameRateLimit.value = AMLL_TRANSITION_FPS_LIMIT;
   lyricFrameLimitTimeout = setTimeout(() => {
@@ -329,25 +339,27 @@ const lyricToggleActive = computed(
 
 /** 按封面与歌词的三种显示状态循环切换 */
 const toggleLyric = (): void => {
-  if (status.fullQueueOpen) {
-    status.fullQueueOpen = false;
-    limitLyricFramesDuringTransition();
-    showLyric.value = true;
-    showCover.value = true;
-    return;
-  }
-  if (!showCover.value) {
-    limitLyricFramesDuringTransition();
-    showCover.value = true;
-    showLyric.value = true;
-  } else if (showLyric.value) {
-    limitLyricFramesDuringTransition();
-    showLyric.value = false;
-  } else {
-    limitLyricFramesDuringTransition();
-    showCover.value = false;
-    showLyric.value = true;
-  }
+  transitionPlayerMode(() => {
+    if (status.fullQueueOpen) {
+      status.fullQueueOpen = false;
+      limitLyricFramesDuringTransition();
+      showLyric.value = true;
+      showCover.value = true;
+      return;
+    }
+    if (!showCover.value) {
+      limitLyricFramesDuringTransition();
+      showCover.value = true;
+      showLyric.value = true;
+    } else if (showLyric.value) {
+      limitLyricFramesDuringTransition();
+      showLyric.value = false;
+    } else {
+      limitLyricFramesDuringTransition();
+      showCover.value = false;
+      showLyric.value = true;
+    }
+  });
 };
 
 const showComments = (): void => {
@@ -517,6 +529,7 @@ const showComments = (): void => {
               <!-- 全屏封面 -->
               <Transition
                 name="lyric-track-info"
+                :css="!settings.reducedMotion"
                 enter-to-class="lyric-track-info-enter-to"
                 leave-from-class="lyric-track-info-leave-from"
                 @after-enter="resetTrackInfoHeight"
@@ -537,11 +550,13 @@ const showComments = (): void => {
                   <PlayerData
                     :align="coverExpanded ? 'center' : showCover ? 'left' : 'center'"
                     simple
+                    :data-player-mode-track-info="fullscreenCover ? '' : undefined"
                   />
                 </div>
               </Transition>
               <!-- 歌词容器 -->
               <Transition
+                :css="!settings.reducedMotion"
                 enter-active-class="lyric-area-transition-active"
                 enter-from-class="lyric-area-transition-from"
                 leave-active-class="lyric-area-transition-active"

@@ -5,10 +5,21 @@ import { coverTransitionActive } from "@/services/coverTransition";
 export const fullPlayerReady = shallowRef(false);
 export const playerTransition = shallowRef<ViewTransition | null>(null);
 export const playerTransitionActive = computed(() => playerTransition.value !== null);
+const playerModeTransition = shallowRef<ViewTransition | null>(null);
 let covers: HTMLElement[] = [];
+
+/** 取消播放器三态切换的共享元素快照 */
+const cancelPlayerModeTransition = (): void => {
+  const active = playerModeTransition.value;
+  if (!active) return;
+  playerModeTransition.value = null;
+  active.skipTransition();
+  document.documentElement.removeAttribute("data-player-mode-transition");
+};
 
 /** 释放播放器快照和临时标记，取消尚未完成的封面匹配 */
 export const cancelPlayerTransition = (): void => {
+  cancelPlayerModeTransition();
   const active = playerTransition.value;
   if (!active) return;
   playerTransition.value = null;
@@ -19,6 +30,47 @@ export const cancelPlayerTransition = (): void => {
   root.removeAttribute("data-player-transition");
   root.style.removeProperty("--player-cover-from-radius");
   root.style.removeProperty("--player-cover-to-radius");
+};
+
+/**
+ * 在播放器三态之间使用共享元素过渡，条件不满足时直接更新状态
+ * @param update - 更新播放器显示状态
+ */
+export const transitionPlayerMode = (update: () => void): void => {
+  const settings = useSettingsStore();
+  if (playerModeTransition.value) {
+    cancelPlayerModeTransition();
+    update();
+    return;
+  }
+  if (
+    !settings.appearance.seamlessTransition ||
+    settings.reducedMotion ||
+    !document.startViewTransition ||
+    document.hidden ||
+    playerTransitionActive.value ||
+    coverTransitionActive.value
+  ) {
+    update();
+    return;
+  }
+
+  const root = document.documentElement;
+  root.setAttribute("data-player-mode-transition", "");
+  const active = document.startViewTransition(async () => {
+    if (playerModeTransition.value !== active) return;
+    update();
+    await nextTick();
+  });
+  playerModeTransition.value = active;
+  void active.ready.catch(() => {});
+  void active.finished
+    .finally(() => {
+      if (playerModeTransition.value !== active) return;
+      playerModeTransition.value = null;
+      root.removeAttribute("data-player-mode-transition");
+    })
+    .catch(() => {});
 };
 
 /**

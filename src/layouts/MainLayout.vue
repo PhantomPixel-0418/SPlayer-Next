@@ -300,6 +300,33 @@ html[data-player-transition="collapse"] {
   }
 }
 
+html[data-player-mode-transition] {
+  [data-player-cover="full"] {
+    view-transition-name: player-mode-cover;
+  }
+
+  [data-player-mode-track-info] {
+    view-transition-name: player-mode-track-info;
+  }
+
+  &::view-transition-group(player-mode-cover),
+  &::view-transition-group(player-mode-track-info) {
+    animation-duration: 250ms;
+    animation-timing-function: linear;
+  }
+
+  &::view-transition-old(player-mode-cover),
+  &::view-transition-new(player-mode-cover) {
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &::view-transition-old(root),
+  &::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 @keyframes player-cover-radius {
   from {
     border-radius: var(--player-cover-from-radius);
