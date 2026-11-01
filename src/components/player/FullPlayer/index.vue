@@ -16,7 +16,11 @@ import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
 import { playerTransitionActive, setPlayerExpanded } from "@/services/playerTransition";
 import { shouldUpdateFrame, type FrameRateGate } from "@/utils/lyric/frameRateGate";
-import { isLyricToggleDisabled, shouldCenterCover, shouldTreatLyricsAsReady } from "./displayState";
+import {
+  isFullscreenCoverExpanded,
+  shouldCenterCover,
+  shouldTreatLyricsAsReady,
+} from "./displayState";
 import { captureTrackInfoHeight, resetTrackInfoHeight } from "./trackInfoTransition";
 
 const status = useStatusStore();
@@ -51,19 +55,21 @@ const visualizerMounted = ref(false);
 const initialLyricTimeMs = ref(0);
 let visualizerIdle = 0;
 let lyricFrameLimitTimeout: ReturnType<typeof setTimeout> | undefined;
-const lyricFrameRateLimit = ref<number>();
 const LYRIC_LAYOUT_TRANSITION_MS = 250;
 const AMLL_TRANSITION_FPS_LIMIT = 24;
+/** 常规歌词渲染帧率，布局过渡结束后恢复到此值 */
+const AMLL_NORMAL_FPS = 60;
+const lyricFrameRateLimit = ref(AMLL_NORMAL_FPS);
 let enterPrepared = false;
 const lyricTimePushGate: FrameRateGate = {};
 const visibility = useDocumentVisibility();
 
-/** 布局过渡期间临时限制 AMLL 更新频率 */
+/** 布局过渡期间临时限制 AMLL 更新频率，结束后恢复常规帧率 */
 const limitLyricFramesDuringTransition = (): void => {
   if (lyricFrameLimitTimeout) clearTimeout(lyricFrameLimitTimeout);
   lyricFrameRateLimit.value = AMLL_TRANSITION_FPS_LIMIT;
   lyricFrameLimitTimeout = setTimeout(() => {
-    lyricFrameRateLimit.value = undefined;
+    lyricFrameRateLimit.value = AMLL_NORMAL_FPS;
     lyricFrameLimitTimeout = undefined;
   }, LYRIC_LAYOUT_TRANSITION_MS);
 };
@@ -244,9 +250,16 @@ watch(
 
 const fullscreenCover = computed(() => settings.player.coverLayout === "fullscreen");
 const coverWidth = computed(() => `${settings.player.coverLyricRatio * 100}%`);
-const lyricPanelVisible = computed(
-  () => showLyric.value || (fullscreenCover.value && !showCover.value),
+/** 歌词区面板：显示歌词时，或全屏纯封面（保留标题栏）时可见 */
+const lyricPanelVisible = computed(() => showLyric.value || coverExpanded.value);
+
+/** 全屏布局下纯封面（隐藏歌词）时封面居中、两侧对称渐隐；与歌词并排时保持左侧 60% 右侧渐隐 */
+const coverExpanded = computed(() =>
+  isFullscreenCoverExpanded(fullscreenCover.value, showCover.value, showLyric.value),
 );
+
+/** 歌词侧边工具栏：面板可见且非全屏纯封面（保留标题栏）态时显示 */
+const lyricToolbarVisible = computed(() => lyricPanelVisible.value && !coverExpanded.value);
 
 const coverCentered = computed(() => {
   return shouldCenterCover(
@@ -310,9 +323,8 @@ const {
   openPicker,
 } = usePlaylistPicker();
 
-const lyricToggleDisabled = computed(() => isLyricToggleDisabled(hasLyric.value, showCover.value));
 const lyricToggleActive = computed(
-  () => (!showCover.value || (showLyric.value && hasLyric.value)) && !status.fullQueueOpen,
+  () => (showLyric.value || !showCover.value) && !status.fullQueueOpen,
 );
 
 /** 按封面与歌词的三种显示状态循环切换 */
@@ -374,8 +386,15 @@ const showComments = (): void => {
           leave-active-class="transition-opacity duration-250 ease-linear"
           leave-to-class="opacity-0"
         >
-          <div v-if="fullscreenCover && showCover" class="absolute inset-y-0 left-0 w-[60%]">
-            <PlayerCover fullscreen />
+          <div
+            v-if="fullscreenCover && showCover"
+            class="absolute inset-y-0 transition-[left,width] duration-250 ease-linear"
+            :style="{
+              left: coverExpanded ? '48px' : '0',
+              width: coverExpanded ? 'calc(100% - 96px)' : '60%',
+            }"
+          >
+            <PlayerCover fullscreen :fade-mode="coverExpanded ? 'both' : 'right'" />
           </div>
         </Transition>
         <!-- 底部频谱 -->
@@ -429,7 +448,6 @@ const showComments = (): void => {
               variant="ghost"
               circle
               :size="40"
-              :disabled="lyricToggleDisabled"
               :class="lyricToggleActive ? 'opacity-100' : 'opacity-40'"
               @click="toggleLyric"
             >
@@ -477,15 +495,21 @@ const showComments = (): void => {
           </Transition>
           <!-- 右侧 -->
           <div
-            class="group absolute inset-y-0 right-0 pr-20 flex flex-col transition-[width,padding,opacity] duration-250 ease-linear"
+            class="group absolute inset-y-0 right-0 flex flex-col z-20 transition-[width,padding,opacity] duration-250 ease-linear"
             :class="[
+              coverExpanded ? 'pr-0' : 'pr-20',
               !showCover ? 'pl-20' : '',
               !lyricPanelVisible || coverCentered || status.fullQueueOpen
                 ? 'opacity-0 pointer-events-none'
                 : 'opacity-100',
             ]"
             :style="{
-              width: !showCover ? '100%' : fullscreenCover ? '50%' : `calc(100% - ${coverWidth})`,
+              width:
+                !showCover || coverExpanded
+                  ? '100%'
+                  : fullscreenCover
+                    ? '50%'
+                    : `calc(100% - ${coverWidth})`,
             }"
             :inert="!lyricPanelVisible || coverCentered || status.fullQueueOpen"
           >
@@ -495,17 +519,25 @@ const showComments = (): void => {
                 name="lyric-track-info"
                 enter-to-class="lyric-track-info-enter-to"
                 leave-from-class="lyric-track-info-leave-from"
-                @before-enter="captureTrackInfoHeight"
                 @after-enter="resetTrackInfoHeight"
                 @before-leave="captureTrackInfoHeight"
               >
                 <div
                   v-if="fullscreenCover || !showCover"
                   class="lyric-track-info shrink-0 pt-2 pb-6"
-                  :class="showCover ? 'pl-[calc(1em-0.5rem)]' : 'text-center'"
+                  :class="
+                    coverExpanded
+                      ? 'text-center'
+                      : showCover
+                        ? 'pl-[calc(1em-0.5rem)]'
+                        : 'text-center'
+                  "
                   :style="{ fontSize: lyricFontSize }"
                 >
-                  <PlayerData :align="showCover ? 'left' : 'center'" simple />
+                  <PlayerData
+                    :align="coverExpanded ? 'center' : showCover ? 'left' : 'center'"
+                    simple
+                  />
                 </div>
               </Transition>
               <!-- 歌词容器 -->
@@ -553,7 +585,7 @@ const showComments = (): void => {
               </Transition>
             </div>
             <!-- 歌词侧边工具栏 -->
-            <LyricActions v-if="lyricPanelVisible" :immersive="immersive" />
+            <LyricActions v-if="lyricToolbarVisible" :immersive="immersive" />
           </div>
           <!-- 播放队列 -->
           <div
@@ -785,14 +817,14 @@ const showComments = (): void => {
 .lyric-track-info-enter-active,
 .lyric-track-info-leave-active {
   transition:
-    height 250ms linear,
+    max-height 250ms linear,
     padding 250ms linear,
     opacity 250ms linear,
     transform 250ms linear;
 }
 
 .lyric-track-info-enter-from {
-  height: 0;
+  max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
   opacity: 0;
@@ -800,15 +832,15 @@ const showComments = (): void => {
 }
 
 .lyric-track-info-enter-to {
-  height: var(--lyric-track-info-height);
+  max-height: 500px;
 }
 
 .lyric-track-info-leave-from {
-  height: var(--lyric-track-info-height, auto);
+  max-height: var(--lyric-track-info-height, auto);
 }
 
 .lyric-track-info-leave-to {
-  height: 0;
+  max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
   opacity: 0;

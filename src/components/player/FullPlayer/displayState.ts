@@ -1,13 +1,4 @@
 /**
- * 判断歌词切换按钮是否应禁用
- * @param hasLyric - 当前歌曲是否有歌词
- * @param showCover - 当前是否显示封面
- * @returns 按钮是否禁用
- */
-export const isLyricToggleDisabled = (hasLyric: boolean, showCover: boolean): boolean =>
-  !hasLyric && showCover;
-
-/**
  * 判断是否应自动居中封面
  * @param fullscreenCover - 是否使用全屏封面布局
  * @param queueOpen - 播放队列是否打开
@@ -28,6 +19,19 @@ export const shouldCenterCover = (
   if (fullscreenCover || queueOpen) return false;
   return !showLyric || (showCover && autoCenterCover && !hasLyric);
 };
+
+/**
+ * 判断全屏封面是否处于仅封面状态
+ * @param fullscreenCover - 是否使用全屏封面布局
+ * @param showCover - 当前是否显示封面
+ * @param showLyric - 当前是否显示歌词
+ * @returns 是否应将全屏封面居中展示
+ */
+export const isFullscreenCoverExpanded = (
+  fullscreenCover: boolean,
+  showCover: boolean,
+  showLyric: boolean,
+): boolean => fullscreenCover && showCover && !showLyric;
 
 /**
  * 判断隐藏歌词时是否可以视为歌词区已就绪
