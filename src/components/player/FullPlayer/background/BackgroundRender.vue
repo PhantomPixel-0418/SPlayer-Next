@@ -45,6 +45,7 @@ const props = withDefaults(defineProps<BackgroundRenderProps>(), {
 const emit = defineEmits<{ ready: [] }>();
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
+const visibility = useDocumentVisibility();
 
 // 外部渲染器实例引用
 const bgRenderRef = shallowRef<CoreBackgroundRender<BaseRenderer>>();
@@ -59,6 +60,8 @@ const updateRendererState = () => {
   if (props.album) {
     renderer.setAlbum(props.album, false).then(
       async () => {
+        if (bgRenderRef.value !== renderer) return;
+        syncRendererMotion();
         // 缓存纹理也要留出首帧，保证淡入起始状态已经绘制
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -81,8 +84,13 @@ const syncRendererMotion = () => {
   const renderer = bgRenderRef.value;
   if (!renderer) return;
 
+  if (visibility.value !== "visible") {
+    renderer.pause();
+    return;
+  }
+
+  renderer.setStaticMode(!props.playing);
   if (props.playing) {
-    renderer.setStaticMode(false);
     renderer.setFlowSpeed(props.flowSpeed);
     renderer.resume();
   } else {
@@ -164,7 +172,7 @@ const stopFftCapture = () => {
  * 按播放状态与跳动开关同步 FFT 采集
  */
 const syncFftCapture = () => {
-  if (props.playing && props.enableBeat) {
+  if (visibility.value === "visible" && props.playing && props.enableBeat) {
     startFftCapture();
   } else {
     stopFftCapture();
@@ -177,6 +185,7 @@ const syncFftCapture = () => {
   }
 };
 
+/** 获取当前设置对应的背景渲染器类 */
 const getRendererClass = (): new (canvas: HTMLCanvasElement) => BaseRenderer => {
   if (props.renderer) return props.renderer;
   return resolveRendererClass(props.renderEngine ?? "mesh");
@@ -257,19 +266,22 @@ watch(
 watch(
   () => props.album,
   (val) => {
-    if (val && bgRenderRef.value) {
-      bgRenderRef.value.setAlbum(val, false);
+    const renderer = bgRenderRef.value;
+    if (val && renderer) {
+      renderer.setAlbum(val, false).then(
+        () => {
+          if (bgRenderRef.value === renderer) syncRendererMotion();
+        },
+        (error) => console.warn("[background] 背景封面加载失败", error),
+      );
     }
   },
 );
 
-watch(
-  () => props.playing,
-  () => {
-    syncRendererMotion();
-    syncFftCapture();
-  },
-);
+watch([() => props.playing, visibility], () => {
+  syncRendererMotion();
+  syncFftCapture();
+});
 
 watch(
   () => props.enableBeat,

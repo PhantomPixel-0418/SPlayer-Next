@@ -208,12 +208,20 @@
     "devtools": "Developer Tools",
     "globalSettings": "Global Settings",
     "searchPlaceholder": "Search songs, artists or albums",
-    "searchEmpty": "Start typing to search",
     "searchGoto": "Search for \"{keyword}\"",
+    "searchCommandHint": "Search songs, or type / for commands",
+    "searchCommandTip": "Type to jump to a setting or page, or run a common action",
     "searchSection": {
       "quick": "Quick",
       "history": "Recent searches",
-      "hot": "Trending"
+      "pages": "Pages",
+      "actions": "Actions"
+    },
+    "searchHistoryClearConfirm": "Clear all search history?",
+    "searchFooter": {
+      "select": "Select",
+      "run": "Run",
+      "command": "Commands"
     },
     "searchMenu": {
       "copy": "Copy",
@@ -783,7 +791,8 @@
       "softwareAnimations": "Transitions & Animations",
       "font": "Fonts",
       "playerBar": "Player Bar",
-      "nowPlaying": "Now Playing",
+      "fullPlayer": "Player",
+      "playerBackground": "Player Background",
       "media": "Media Controls",
       "device": "Output Device",
       "hotkeys": "Hotkeys",
@@ -878,6 +887,13 @@
       "description": "Configure the play button at the start of each song row",
       "current": "Play Current Track Only",
       "all": "Play Whole List"
+    },
+    "barLyricMode": {
+      "label": "Player Bar Lyric Mode",
+      "description": "Choose lyric content and highlighting; long lines scroll with playback progress",
+      "lyric": "Lyrics",
+      "translation": "Lyrics + Translation",
+      "word": "Word by Word"
     },
     "showLyricInBar": {
       "label": "Show Lyric While Playing",
@@ -1300,6 +1316,10 @@
       "label": "Background Lyrics Always Below",
       "description": "Always place background vocal lines below the main lyric line"
     },
+    "autoGenerateWordByWord": {
+      "label": "Auto-generate Word Effect",
+      "description": "Generate word-by-word effects for line-timed lyrics"
+    },
     "enableWordHighlight": {
       "label": "Word Highlight",
       "description": "Show word-by-word lyric highlight progress"
@@ -1386,10 +1406,6 @@
     "desktopLyricWordByWord": {
       "label": "Word by Word",
       "description": "Render highlight progress per word"
-    },
-    "desktopLyricAutoGenerateWordByWord": {
-      "label": "Auto-generate Word Effect",
-      "description": "When off, only real per-word lyrics apply"
     },
     "desktopLyricPlayedColor": {
       "label": "Played Color",
@@ -1569,7 +1585,7 @@
       "description": "Horizontal position of the progress point when the lyric scrolls"
     },
     "playerBgType": {
-      "label": "Player Background",
+      "label": "Background Style",
       "description": "Background type of the full-screen player",
       "blur": "Blur",
       "solid": "Solid",
@@ -1634,15 +1650,16 @@
       "label": "Dithering",
       "description": "Enable screen-space dithering to reduce banding"
     },
-    "coverLayout": {
-      "label": "Cover Layout",
-      "description": "Cover presentation in the full-screen player",
-      "default": "Default",
-      "fullscreen": "Fullscreen"
+    "playerLayout": {
+      "label": "Player Layout",
+      "description": "Overall layout of the full-screen player",
+      "classic": "Classic",
+      "fullCover": "Fullscreen Cover",
+      "fullLyric": "Fullscreen Lyrics"
     },
     "coverLyricRatio": {
       "label": "Cover/Lyrics Ratio",
-      "description": "Width ratio between cover and lyric areas in Now Playing"
+      "description": "Width ratio between cover and lyric areas in the classic layout"
     },
     "themeMode": {
       "label": "Theme Mode",

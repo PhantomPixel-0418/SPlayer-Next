@@ -1,25 +1,23 @@
+<script lang="ts">
+const hdCache = shallowRef<{ id: string; data: string } | null>(null);
+</script>
+
 <script setup lang="ts">
 import { getDynamicCover } from "@/apis/song/netease";
 import { useMediaStore } from "@/stores/media";
-import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
+import { useStatusStore } from "@/stores/status";
 import { useUserStore } from "@/stores/user";
 import { useTimeoutFn } from "@vueuse/core";
 import { nextTick } from "vue";
-
-withDefaults(defineProps<{ fullscreen?: boolean }>(), { fullscreen: false });
 
 const media = useMediaStore();
 const status = useStatusStore();
 const settings = useSettingsStore();
 const user = useUserStore();
-const { isPlaying } = storeToRefs(status);
 
 /** 加载中的歌曲使用队列当前项作为封面兜底 */
 const displayTrack = computed(() => media.track ?? status.currentTrack);
-
-/** 高清封面缓存 */
-const hdCache = shallowRef<{ id: string; data: string } | null>(null);
 
 const coverSrc = computed(() =>
   hdCache.value && hdCache.value.id === displayTrack.value?.id
@@ -36,20 +34,20 @@ watchEffect(async () => {
   hdCache.value = { id, data: r.data };
 });
 
-/** 动态封面实现 */
+/** 动态封面地址与加载状态 */
 const dynamicCoverUrl = ref<string>("");
 const dynamicCoverLoaded = ref<boolean>(false);
 const videoRef = ref<HTMLVideoElement | null>(null);
 
-/** 是否处于封面展示模式（非全屏） */
-const isCoverMode = computed(() => settings.player.coverLayout !== "fullscreen");
+/** 动态封面仅在经典布局的方形封面上展示 */
+const isCoverMode = computed(() => settings.player.layout === "classic");
 
 /** 是否在加载中 */
 const trackLoading = computed(() => status.trackLoading);
 
 /**
  * 获取动态封面
- * 仅对网易云来源、非全屏模式、已登录且开关开启的歌曲生效
+ * 仅对网易云来源、经典布局、已登录且开关开启的歌曲生效
  */
 const fetchDynamicCover = async (): Promise<void> => {
   const track = displayTrack.value;
@@ -68,12 +66,11 @@ const fetchDynamicCover = async (): Promise<void> => {
     return;
   }
 
-  // 停止已有的再放送定时器，重置加载状态
   dynamicCoverStop();
   dynamicCoverLoaded.value = false;
 
   const url = await getDynamicCover(track.id);
-  if (displayTrack.value?.id !== track.id) return; // 歌曲已切换
+  if (displayTrack.value?.id !== track.id) return;
   dynamicCoverUrl.value = url ?? "";
 };
 
@@ -109,7 +106,7 @@ watch(
     [
       displayTrack.value?.id,
       settings.player.dynamicCover,
-      settings.player.coverLayout,
+      settings.player.layout,
       status.trackLoading,
     ] as const,
   () => {
@@ -128,24 +125,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    data-player-cover="full"
-    :class="
-      fullscreen
-        ? 'player-cover-fullscreen w-full h-full aspect-auto rounded-none bg-transparent overflow-hidden shrink-0'
-        : [
-            'player-cover',
-            'w-full aspect-square rounded-[32px] overflow-hidden shrink-0',
-            'shadow-[0_0_20px_10px_rgba(0,0,0,0.1)]',
-            isPlaying ? 'scale-100' : 'scale-90',
-          ]
-    "
-  >
+  <!-- 外观由布局决定，这里只负责高清封面加载、动态封面与共享过渡标记 -->
+  <div data-player-cover="full" class="relative overflow-hidden shrink-0">
     <DetailCover :src="coverSrc" :fallback="displayTrack?.cover" class="size-full" />
     <!-- 动态封面 -->
     <Transition name="fade" mode="out-in">
       <video
-        v-if="dynamicCoverUrl && !fullscreen"
+        v-if="dynamicCoverUrl"
         ref="videoRef"
         :src="dynamicCoverUrl"
         :class="['dynamic-cover', { loaded: dynamicCoverLoaded }]"
@@ -160,29 +146,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.player-cover {
-  transition:
-    transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 200ms ease-out;
-}
-
-.player-cover-fullscreen {
-  mask-image: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 1) 0%,
-    rgba(0, 0, 0, 0.98) 10%,
-    rgba(0, 0, 0, 0.92) 22%,
-    rgba(0, 0, 0, 0.82) 32%,
-    rgba(0, 0, 0, 0.68) 42%,
-    rgba(0, 0, 0, 0.52) 52%,
-    rgba(0, 0, 0, 0.36) 62%,
-    rgba(0, 0, 0, 0.22) 72%,
-    rgba(0, 0, 0, 0.1) 82%,
-    rgba(0, 0, 0, 0.03) 92%,
-    rgba(0, 0, 0, 0) 100%
-  );
-}
-
 .dynamic-cover {
   position: absolute;
   top: 0;

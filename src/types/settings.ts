@@ -31,7 +31,8 @@ export interface TitaniumBgOptions {
   /** 启用屏幕空间抖动，减少大面积色带 */
   dithering: boolean;
 }
-export type CoverLayout = "default" | "fullscreen";
+/** 全屏播放器布局 */
+export type PlayerLayout = "classic" | "fullCover" | "fullLyric";
 
 /**
  * 歌曲播放时间显示格式
@@ -151,6 +152,8 @@ export interface LyricSettings {
   preferPluginLyric: boolean;
   /** 自动识别背景歌词 */
   detectBackgroundLyrics: boolean;
+  /** 为没有逐字时间的歌词统一生成字级时间戳 */
+  autoGenerateWordByWord: boolean;
   /** 中文繁简转换模式（基于 OpenCC） */
   cjkTransform: CjkTransformMode;
   /** 字号随窗口高度调整 */
@@ -261,8 +264,8 @@ export interface PlayerSettings {
   playerBgBeat: boolean;
   /** 流沙渲染器参数 */
   playerBgTitanium: TitaniumBgOptions;
-  /** 全屏播放器封面布局 */
-  coverLayout: CoverLayout;
+  /** 全屏播放器布局 */
+  layout: PlayerLayout;
   /** 播放页封面/歌词分栏占比（0-1，封面侧宽度） */
   coverLyricRatio: number;
   /** 无歌词时自动居中封面并隐藏歌词区域 */
@@ -299,6 +302,8 @@ export interface PlayerSettings {
   snapToLyric: boolean;
   /** 播放时底部显示歌词而非歌手名 */
   showLyricInBar: boolean;
+  /** 底部歌词展示模式 */
+  barLyricMode: "lyric" | "translation" | "word";
   /** 播放时提前获取下一首的播放数据 */
   preloadNextTrack: boolean;
   /** 相邻曲目的播放过渡方式 */
