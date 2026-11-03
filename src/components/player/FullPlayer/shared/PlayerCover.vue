@@ -39,15 +39,17 @@ const dynamicCoverUrl = ref<string>("");
 const dynamicCoverLoaded = ref<boolean>(false);
 const videoRef = ref<HTMLVideoElement | null>(null);
 
-/** 动态封面仅在经典布局的方形封面上展示 */
-const isCoverMode = computed(() => settings.player.layout === "classic");
+/** 动态封面在经典与全屏封面布局展示 */
+const isCoverMode = computed(
+  () => settings.player.layout === "classic" || settings.player.layout === "fullCover",
+);
 
 /** 是否在加载中 */
 const trackLoading = computed(() => status.trackLoading);
 
 /**
  * 获取动态封面
- * 仅对网易云来源、经典布局、已登录且开关开启的歌曲生效
+ * 仅对网易云来源、封面类布局、已登录且开关开启的歌曲生效
  */
 const fetchDynamicCover = async (): Promise<void> => {
   const track = displayTrack.value;
@@ -152,7 +154,8 @@ onBeforeUnmount(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  border-radius: 32px;
+  object-fit: cover;
+  border-radius: inherit;
   overflow: hidden;
   z-index: 1;
   opacity: 0;
