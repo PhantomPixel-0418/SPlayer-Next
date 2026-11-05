@@ -2,7 +2,7 @@ import type { LyricFormat } from "lyric-kit";
 
 import { DEFAULT_LYRIC_FORMAT_ORDER as DEFAULT_LYRIC_FORMAT_ORDER_SHARED } from "@shared/types/lyrics";
 import type { Platform } from "@shared/types/platform";
-import type { TransitionPreference } from "@shared/types/player";
+import type { MotionCoverSource, TransitionPreference } from "@shared/types/player";
 import type { TransitionMode } from "@shared/types/automix";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import type { CjkTransformMode } from "@shared/types/opencc";
@@ -32,7 +32,7 @@ export interface TitaniumBgOptions {
   dithering: boolean;
 }
 /** 全屏播放器布局 */
-export type PlayerLayout = "classic" | "fullCover" | "fullLyric";
+export type PlayerLayout = "classic" | "fullCover" | "fullLyric" | "apple";
 
 /**
  * 歌曲播放时间显示格式
@@ -274,6 +274,8 @@ export interface PlayerSettings {
   showPlaybackSource: boolean;
   /** 颜色是否跟随封面 */
   followCoverColor: boolean;
+  /** 全屏播放器动态封面来源 */
+  motionCoverSource: MotionCoverSource;
   /** 全屏播放器自动进入沉浸模式（隐藏顶/底栏与鼠标） */
   autoImmersive: boolean;
   /** 输出设备 ID（cpal DeviceId），null 表示跟随系统默认 */
@@ -316,8 +318,6 @@ export interface PlayerSettings {
   searchPlayBehavior: PlayBehavior;
   /** 歌曲列表行首播放按钮的行为 */
   songListPlayBehavior: PlayBehavior;
-  /** 是否展示动态封面（仅网易云来源，封面模式有效） */
-  dynamicCover: boolean;
 }
 
 /** 外观设置 */

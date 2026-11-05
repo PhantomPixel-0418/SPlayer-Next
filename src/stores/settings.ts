@@ -155,6 +155,7 @@ export const useSettingsStore = defineStore(
       autoCenterCover: true,
       showPlaybackSource: false,
       followCoverColor: true,
+      motionCoverSource: "off",
       autoImmersive: true,
       outputDevice: null,
       pauseOnDeviceSwitch: false,
@@ -176,7 +177,6 @@ export const useSettingsStore = defineStore(
       automixCrossfadeFallback: true,
       searchPlayBehavior: "current",
       songListPlayBehavior: "current",
-      dynamicCover: false,
     });
 
     /** 强迫症设置 */

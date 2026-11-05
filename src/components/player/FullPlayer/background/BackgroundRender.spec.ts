@@ -30,7 +30,8 @@ vi.mock("@/services/fftCapture", () => ({
   acquireFft: mocks.acquire,
   releaseFft: mocks.release,
 }));
-vi.mock("@applemusic-like-lyrics/core", () => ({
+vi.mock("@applemusic-like-lyrics/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@applemusic-like-lyrics/core")>()),
   BackgroundRender: { new: () => mocks.renderer },
   MeshGradientRenderer: class {},
   IsolationRenderer: class {},

@@ -6,7 +6,6 @@ import IconLucidePlay from "~icons/lucide/play";
 import { getActiveDeviceId } from "@/core/player";
 import { setDeviceVolume } from "@/services/deviceVolume";
 import { useStatusStore } from "@/stores/status";
-import { useUserStore } from "@/stores/user";
 import AutoMixComponents from "@/components/settings/custom/AutoMixComponents.vue";
 
 const playerCategory: SettingCategory = {
@@ -189,13 +188,6 @@ const playerCategory: SettingCategory = {
             },
           ],
           childrenCondition: () => useSettingsStore().player.transitionMode !== "none",
-        },
-        {
-          key: "dynamicCover",
-          type: "switch",
-          binding: { store: "settings", path: "player.dynamicCover" },
-          defaultValue: false,
-          disabled: () => !useUserStore().isLoggedIn,
         },
       ],
     },
