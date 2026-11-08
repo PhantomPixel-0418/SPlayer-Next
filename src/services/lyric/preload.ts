@@ -24,6 +24,7 @@ const buildTrackKey = (track: Track): string =>
     track.originalId ?? "",
     track.id,
     track.extId ?? "",
+    track.path ?? "",
     track.title,
     track.artists.map((artist) => artist.name),
   ]);
@@ -60,13 +61,10 @@ export const invalidatePreloadedLyric = (): void => {
 
 /**
  * 预载候选歌曲的最终歌词结果
+ * 本地歌曲同步枚举同目录外挂歌词并按格式优先级选定，在线/流媒体走网络解析
  * @param track - 候选歌曲
  */
 export const preloadLyricForTrack = (track: Track): void => {
-  if (track.source === "local") {
-    invalidatePreloadedLyric();
-    return;
-  }
   const trackKey = buildTrackKey(track);
   const contextKey = buildContextKey();
   if (preloaded?.trackKey === trackKey && preloaded.contextKey === contextKey) return;

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   settings: {
     player: {
       preloadNextTrack: true,
+      preloadLyric: false,
       songLevel: "hq",
       allowTrialPlay: false,
       transitionMode: "crossfade",

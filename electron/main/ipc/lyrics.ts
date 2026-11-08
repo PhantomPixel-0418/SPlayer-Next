@@ -10,6 +10,8 @@
  */
 
 import { ipcMain, dialog } from "electron";
+import { existsSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 import * as netease from "@main/apis/common/lyric/netease";
 import * as qqmusic from "@main/apis/common/lyric/qqmusic";
 import * as kugou from "@main/apis/common/lyric/kugou";
@@ -17,7 +19,12 @@ import { fetchTTML, searchTTML } from "@main/apis/common/lyric/ttml";
 import { matchLocalTTML } from "@main/services/localLyricRepo";
 import { buildFingerprint, deleteMatchedId, getMatchedId } from "@main/database/lyricMatchCache";
 import { coreLog } from "@main/utils/logger";
-import type { LyricMatchResponse, LyricTTMLResponse } from "@shared/types/lyrics";
+import type {
+  LyricMatchResponse,
+  LyricTTMLResponse,
+  LocalExternalLyric,
+} from "@shared/types/lyrics";
+import type { IpcResponse } from "@shared/types/player";
 import type { Platform } from "@shared/types/platform";
 import type { Track } from "@shared/types/player";
 
@@ -116,6 +123,34 @@ const resolveTTMLOverlay = async (
   }
 };
 
+/** 本地外挂歌词支持的扩展名 */
+const LOCAL_LYRIC_EXTENSIONS: readonly LocalExternalLyric["format"][] = [
+  "ttml",
+  "lys",
+  "qrc",
+  "krc",
+  "yrc",
+  "lrc",
+  "ass",
+  "srt",
+];
+
+/**
+ * 枚举本地音频同目录下的外挂歌词文件
+ * @param audioPath - 本地音频路径
+ * @returns 按扩展名枚举出的外挂歌词文件列表
+ */
+const findLocalExternalLyrics = (audioPath: string): LocalExternalLyric[] => {
+  const dir = dirname(audioPath);
+  const stem = basename(audioPath, extname(audioPath));
+  const found: LocalExternalLyric[] = [];
+  for (const ext of LOCAL_LYRIC_EXTENSIONS) {
+    const lyricPath = join(dir, `${stem}.${ext}`);
+    if (existsSync(lyricPath)) found.push({ format: ext, path: lyricPath });
+  }
+  return found;
+};
+
 export const registerLyricsIpc = (): void => {
   ipcMain.handle("lyrics:matchById", (_evt, platform: Platform, id: string, track?: Track) =>
     dedup(`byId:${platform}:${id}`, () => resolveById(platform, id, track)),
@@ -158,4 +193,18 @@ export const registerLyricsIpc = (): void => {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+  ipcMain.handle(
+    "lyrics:findLocalExternalLyrics",
+    (_evt, audioPath: string): IpcResponse<LocalExternalLyric[]> => {
+      if (typeof audioPath !== "string" || !audioPath) {
+        return { success: false, error: "invalid audio path" };
+      }
+      try {
+        return { success: true, data: findLocalExternalLyrics(audioPath) };
+      } catch (err) {
+        coreLog.warn("[lyrics] findLocalExternalLyrics failed:", err);
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 };

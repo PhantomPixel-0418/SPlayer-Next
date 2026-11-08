@@ -32,6 +32,8 @@ let nativePreloadId: string | null = null;
 let preloadAbort: AbortController | null = null;
 let cachedResult: NextTrackPreloadResult | null = null;
 let currentContextKey: string | null = null;
+let cachedLyricKey: string | null = null;
+let cachedLyricTrackId: string | null = null;
 let pendingCover: HTMLImageElement | null = null;
 let transitionPreparedId: string | null = null;
 let stopContextWatch: (() => void) | null = null;
@@ -117,6 +119,8 @@ export const invalidateNextTrackPreload = (): void => {
     pendingCover = null;
   }
   invalidatePreloadedLyric();
+  cachedLyricKey = null;
+  cachedLyricTrackId = null;
 };
 
 /**
@@ -212,7 +216,9 @@ export const finishPreparedTransition = (id: string, rejected?: NextTrackPreload
 export const scheduleNextTrackPreload = (): void => {
   if (transitionPreparedId) return;
   const settings = useSettingsStore();
-  if (!settings.player.preloadNextTrack) {
+  const preloadLyric = settings.player.preloadLyric;
+  const preloadTrack = settings.player.preloadNextTrack;
+  if (!preloadLyric && !preloadTrack) {
     invalidateNextTrackPreload();
     return;
   }
@@ -243,6 +249,21 @@ export const scheduleNextTrackPreload = (): void => {
   }
 
   const candidateTrack = candidateResult.track;
+
+  // 歌词预载独立于原生槽位：仅开启歌词预载时，仍提前解析下一曲歌词文本
+  if (preloadLyric) {
+    const contextKey = buildContextKey(candidateTrack);
+    // 上下文指纹一致且已有缓存，避免重复触发
+    if (!(cachedLyricKey === contextKey && cachedLyricTrackId === candidateTrack.id)) {
+      cachedLyricKey = contextKey;
+      cachedLyricTrackId = candidateTrack.id;
+      preloadLyricForTrack(candidateTrack);
+    }
+  }
+
+  // 仅预载歌词时无需准备原生槽位
+  if (!preloadTrack) return;
+
   if (
     candidateTrack.source !== "local" &&
     (!settings.system.cache.songCache.enabled || !settings.system.cache.songCache.cacheStreaming)
