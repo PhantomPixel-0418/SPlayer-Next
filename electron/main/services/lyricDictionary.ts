@@ -71,5 +71,28 @@ export async function optimizeWithJapaneseDictionary(lines: LyricLine[]): Promis
   indexes.forEach((index, position) => {
     output[index] = optimizeJapaneseLine(lines[index], { tokenize: () => results[position] });
   });
+  // 同一份歌词里逐字与逐行混排会让观感割裂：只要出现逐行回退，就整体统一为逐行
+  const generated = indexes
+    .map((index) => output[index])
+    .filter((line) => line.generatedPronunciation?.method === "dictionary");
+  const hasWord = generated.some((line) => line.generatedPronunciation?.alignment === "word");
+  const hasLine = generated.some((line) => line.generatedPronunciation?.alignment === "line");
+  if (hasWord && hasLine) {
+    indexes.forEach((index) => {
+      const line = output[index];
+      if (line.generatedPronunciation?.alignment !== "word") return;
+      const roman = line.romanLyric || line.words.map((word) => word.romanWord ?? "").join("");
+      output[index] = {
+        ...line,
+        words: line.words.map((word) => {
+          const copy = { ...word };
+          delete copy.romanWord;
+          return copy;
+        }),
+        romanLyric: roman,
+        generatedPronunciation: { method: "dictionary", alignment: "line" },
+      };
+    });
+  }
   return output;
 }

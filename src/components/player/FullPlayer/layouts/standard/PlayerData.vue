@@ -123,7 +123,14 @@ const generatedLyricLabels = computed(() => {
     labels.push(t("settings.lyricEnhancement.generatedPronunciation"));
   if (media.parsedLyric.some((line) => line.generatedPronunciation?.method === "dictionary"))
     labels.push(t("settings.lyricEnhancement.dictionaryPronunciation"));
-  if (media.parsedLyric.some((line) => line.generatedPronunciation?.alignment === "line"))
+  // 仅当逐字与逐行混排时才提示逐行回退；整份歌词统一为逐行时不再提示
+  const hasWordAlignment = media.parsedLyric.some(
+    (line) => line.generatedPronunciation?.alignment === "word",
+  );
+  const hasLineAlignment = media.parsedLyric.some(
+    (line) => line.generatedPronunciation?.alignment === "line",
+  );
+  if (hasWordAlignment && hasLineAlignment)
     labels.push(t("settings.lyricEnhancement.lineFallback"));
   return labels;
 });

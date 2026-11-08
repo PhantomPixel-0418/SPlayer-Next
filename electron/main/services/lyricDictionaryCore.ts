@@ -52,6 +52,24 @@ function needsWordSpace(
 }
 
 /**
+ * 取 token 的罗马字读音
+ *
+ * kuromoji 对片假名生词与拉丁词不给读音，这里按字形回退：
+ * 假名本身可读，拉丁与符号原样保留；汉字缺少读音时返回 null
+ *
+ * @param token - 词典分词结果
+ * @returns 罗马字，无法确定时为 null
+ */
+function tokenRomaji(token: DictionaryToken): string | null {
+  const reading = tokenReading(token);
+  if (reading) return toRomaji(reading);
+  const surface = token.surface_form;
+  if (/^[\u3040-\u30ff]+$/u.test(surface)) return toRomaji(surface);
+  if (/^[\p{Script=Latin}\p{P}\p{S}\s]+$/u.test(surface)) return surface.trim();
+  return null;
+}
+
+/**
  * 按词典词边界和原片段边界生成日语发音
  * @param line - 原始歌词行
  * @param tokenizer - 日语分词器
@@ -84,12 +102,10 @@ export function optimizeJapaneseLine(
       validWholeLine = false;
       break;
     }
-    const reading = tokenReading(token);
-    if (reading)
+    const romaji = tokenRomaji(token);
+    if (romaji)
       wholeLine +=
-        (needsWordSpace(previousWhole, token, text.slice(wholeCursor, start)) ? " " : "") +
-        toRomaji(reading);
-    else if (/^[\p{P}\p{S}\s]+$/u.test(token.surface_form)) wholeLine += token.surface_form.trim();
+        (needsWordSpace(previousWhole, token, text.slice(wholeCursor, start)) ? " " : "") + romaji;
     else {
       validWholeLine = false;
       break;
