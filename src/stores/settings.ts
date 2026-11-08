@@ -192,6 +192,7 @@ export const useSettingsStore = defineStore(
     const lyric = reactive<LyricSettings>({
       llmTranslation: false,
       pronunciationOptimization: "off",
+      pronunciationAlignment: "auto",
       lyricSourcePreference: "auto",
       lyricSourceOrder: [...DEFAULT_LYRIC_SOURCE_ORDER],
       lyricFormatOrder: [...DEFAULT_LYRIC_FORMAT_ORDER],

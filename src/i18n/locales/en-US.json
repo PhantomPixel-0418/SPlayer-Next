@@ -1084,6 +1084,13 @@
       "processing": "Enhancing lyrics…",
       "failed": "Lyric enhancement incomplete"
     },
+    "pronunciationAlignment": {
+      "label": "Auto pronunciation alignment",
+      "description": "Word: align per word; Line: one reading per line; Auto: unify per lyrics",
+      "auto": "Auto",
+      "word": "Word",
+      "line": "Line"
+    },
     "cjkTransform": {
       "label": "Chinese Conversion",
       "description": "Convert lyric text between Simplified and Traditional Chinese or Japanese Kanji",

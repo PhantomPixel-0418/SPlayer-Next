@@ -319,6 +319,8 @@ export interface OnlineLyricSettings {
   enableOnlineTTMLLyric: boolean;
   /** AMLL TTML DB 镜像地址模板，需含 %s，%p 可选；留空使用官方 API */
   amllDbServer: string;
+  /** 自动发音的对齐方式：auto 按歌词统一、word 尽量逐字、line 全部逐行 */
+  pronunciationAlignment: "auto" | "word" | "line";
 }
 
 /** 本地歌词配置 */

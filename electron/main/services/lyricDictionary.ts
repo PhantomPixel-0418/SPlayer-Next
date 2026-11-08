@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { LyricLine } from "@shared/types/lyrics";
+import { store as configStore } from "@main/store";
 import { defaultCacheDir } from "@main/utils/paths";
 import { optimizeJapaneseLine } from "./lyricDictionaryCore";
 import { createLyricDictionaryStore } from "./lyricDictionaryStore";
@@ -77,7 +78,9 @@ export async function optimizeWithJapaneseDictionary(lines: LyricLine[]): Promis
     .filter((line) => line.generatedPronunciation?.method === "dictionary");
   const hasWord = generated.some((line) => line.generatedPronunciation?.alignment === "word");
   const hasLine = generated.some((line) => line.generatedPronunciation?.alignment === "line");
-  if (hasWord && hasLine) {
+  const alignment = configStore.get("lyric.pronunciationAlignment") ?? "auto";
+  const uniformToLine = alignment === "line" || (alignment === "auto" && hasWord && hasLine);
+  if (uniformToLine && hasWord) {
     indexes.forEach((index) => {
       const line = output[index];
       if (line.generatedPronunciation?.alignment !== "word") return;

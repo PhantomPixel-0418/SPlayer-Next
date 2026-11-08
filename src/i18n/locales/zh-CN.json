@@ -1084,6 +1084,13 @@
       "processing": "正在补充翻译和发音…",
       "failed": "歌词增强未完成"
     },
+    "pronunciationAlignment": {
+      "label": "自动发音对齐",
+      "description": "逐字：每个词单独对齐；逐行：整行发音；自动：按歌词整体情况统一",
+      "auto": "自动",
+      "word": "逐字",
+      "line": "逐行"
+    },
     "cjkTransform": {
       "label": "繁简转换",
       "description": "对歌词文本进行简繁中文或日文汉字转换",

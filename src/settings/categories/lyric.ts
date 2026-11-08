@@ -265,6 +265,18 @@ const lyricCategory: SettingCategory = {
           tag: { text: "Beta" },
         },
         {
+          key: "pronunciationAlignment",
+          type: "select",
+          binding: { store: "settings", path: "lyric.pronunciationAlignment" },
+          options: [
+            { value: "auto", labelKey: "settings.pronunciationAlignment.auto" },
+            { value: "word", labelKey: "settings.pronunciationAlignment.word" },
+            { value: "line", labelKey: "settings.pronunciationAlignment.line" },
+          ],
+          defaultValue: "auto",
+          disabled: () => useSettingsStore().lyric.pronunciationOptimization === "off",
+        },
+        {
           key: "lyricEnhancementConfig",
           type: "custom",
           component: LyricEnhancementConfig,
