@@ -49,8 +49,6 @@ const mountConfig = (): VueWrapper =>
       ],
       stubs: {
         AiModelConfig: { template: "<div data-test='ai-model-config' />" },
-        IconLucideBot: true,
-        IconLucideBookOpen: true,
         IconLucideTrash2: true,
         SButton: {
           props: ["loading", "disabled"],

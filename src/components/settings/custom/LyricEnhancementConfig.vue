@@ -94,17 +94,16 @@ onMounted(refresh);
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
+  <div class="flex flex-col gap-2.5">
     <div
-      class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-solid border-outline-variant/15 bg-surface-panel px-4 py-3"
+      class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-solid border-outline-variant/15 bg-surface-panel px-4 py-3.5 transition-all duration-300"
     >
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 text-sm font-medium text-on-surface">
-          <IconLucideBot class="size-4" />
+        <div class="flex items-center gap-2 text-base">
           {{ t("settings.lyricEnhancement.modelTitle") }}
-          <STag size="tiny" type="warning" variant="soft">Beta</STag>
+          <STag>Beta</STag>
         </div>
-        <div class="mt-1 truncate text-xs text-on-surface-variant/70">
+        <div class="mt-0.5 text-sm text-on-surface-variant/70">
           {{
             activeModel
               ? `${activeModel.name} · ${activeModel.model}`
@@ -118,14 +117,13 @@ onMounted(refresh);
     </div>
 
     <div
-      class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-solid border-outline-variant/15 bg-surface-panel px-4 py-3"
+      class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-solid border-outline-variant/15 bg-surface-panel px-4 py-3.5 transition-all duration-300"
     >
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 text-sm font-medium text-on-surface">
-          <IconLucideBookOpen class="size-4" />
+        <div class="flex items-center gap-2 text-base">
           {{ t("settings.lyricEnhancement.dictionaryTitle") }}
         </div>
-        <div class="mt-1 text-xs text-on-surface-variant/70">
+        <div class="mt-0.5 text-sm text-on-surface-variant/70">
           {{ t("settings.lyricEnhancement.dictionaryDescription") }}
           <span v-if="dictionary.installed">· {{ t("settings.lyricEnhancement.installed") }}</span>
           <span v-else>· {{ t("settings.lyricEnhancement.notInstalled") }}</span>
