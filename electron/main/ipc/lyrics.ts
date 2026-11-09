@@ -10,7 +10,7 @@
  */
 
 import { ipcMain, dialog } from "electron";
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as netease from "@main/apis/common/lyric/netease";
 import * as qqmusic from "@main/apis/common/lyric/qqmusic";
@@ -135,20 +135,38 @@ const LOCAL_LYRIC_EXTENSIONS: readonly LocalExternalLyric["format"][] = [
   "srt",
 ];
 
+/** 仅保留一个在途扫描，避免慢目录占满文件系统工作线程 */
+let localDiscovery: { audioPath: string; promise: Promise<LocalExternalLyric[]> } | null = null;
+
 /**
- * 枚举本地音频同目录下的外挂歌词文件
+ * 异步枚举本地音频同目录下的外挂歌词文件
+ * 同路径复用在途请求，扫描繁忙时其他路径跳过预载并由正常加载兜底
  * @param audioPath - 本地音频路径
- * @returns 按扩展名枚举出的外挂歌词文件列表
+ * @returns 按扩展名排序的外挂歌词文件列表
  */
-const findLocalExternalLyrics = (audioPath: string): LocalExternalLyric[] => {
+const findLocalExternalLyrics = (audioPath: string): Promise<LocalExternalLyric[]> => {
+  if (localDiscovery) {
+    return localDiscovery.audioPath === audioPath ? localDiscovery.promise : Promise.resolve([]);
+  }
   const dir = dirname(audioPath);
   const stem = basename(audioPath, extname(audioPath));
-  const found: LocalExternalLyric[] = [];
-  for (const ext of LOCAL_LYRIC_EXTENSIONS) {
-    const lyricPath = join(dir, `${stem}.${ext}`);
-    if (existsSync(lyricPath)) found.push({ format: ext, path: lyricPath });
-  }
-  return found;
+  const promise = (async () => {
+    const found: LocalExternalLyric[] = [];
+    for (const ext of LOCAL_LYRIC_EXTENSIONS) {
+      const lyricPath = join(dir, `${stem}.${ext}`);
+      try {
+        await access(lyricPath);
+        found.push({ format: ext, path: lyricPath });
+      } catch {
+        // 与原有存在性检查一致，缺失或不可访问的文件不作为候选
+      }
+    }
+    return found;
+  })().finally(() => {
+    localDiscovery = null;
+  });
+  localDiscovery = { audioPath, promise };
+  return promise;
 };
 
 export const registerLyricsIpc = (): void => {
@@ -195,12 +213,12 @@ export const registerLyricsIpc = (): void => {
   });
   ipcMain.handle(
     "lyrics:findLocalExternalLyrics",
-    (_evt, audioPath: string): IpcResponse<LocalExternalLyric[]> => {
+    async (_evt, audioPath: string): Promise<IpcResponse<LocalExternalLyric[]>> => {
       if (typeof audioPath !== "string" || !audioPath) {
         return { success: false, error: "invalid audio path" };
       }
       try {
-        return { success: true, data: findLocalExternalLyrics(audioPath) };
+        return { success: true, data: await findLocalExternalLyrics(audioPath) };
       } catch (err) {
         coreLog.warn("[lyrics] findLocalExternalLyrics failed:", err);
         return { success: false, error: err instanceof Error ? err.message : String(err) };

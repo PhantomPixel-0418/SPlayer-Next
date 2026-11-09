@@ -401,8 +401,8 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
       await loadStreamingLyric(token, track, detail);
       return;
     }
-    // 本地文件：优先消费预载的外挂歌词，否则现读本地歌词文件
-    let local = consumePreloadedLyric(track);
+    // 本地文件：复用已消费的预载结果，否则现读本地歌词文件
+    let local = preloaded;
     if (!local.hit && detail) {
       const read = await readLocal(detail);
       local = read ? { hit: true, lyric: localToResolved(read) } : { hit: false };

@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
     lyric: {
       lyricSourcePreference: "auto",
       lyricSourceOrder: [],
-      lyricFormatOrder: [],
+      lyricFormatOrder: [] as string[],
       smartPreferOnline: false,
       preferPluginLyric: false,
     },
@@ -40,6 +40,8 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   cancel: vi.fn(),
   lyric: vi.fn(),
+  resolveLyric: vi.fn(),
+  preload: null as typeof import("./lyric/preload") | null,
   componentStatus: vi.fn(),
   componentSubscribe: vi.fn(),
   componentUnsubscribe: vi.fn(),
@@ -52,19 +54,30 @@ vi.mock("@/stores/plugins", () => ({ usePluginsStore: () => ({ list: [] }) }));
 vi.mock("@/stores/queue", () => ({ queue: { value: [] } }));
 vi.mock("@/core/player/candidate", () => ({ getNextTrackCandidate: () => mocks.candidate }));
 vi.mock("@/services/audioSource", () => ({ resolveTrackSource: mocks.resolve }));
-vi.mock("@/services/lyric/preload", () => ({
-  preloadLyricForTrack: mocks.lyric,
-  invalidatePreloadedLyric: vi.fn(),
-}));
+vi.mock("@/services/lyric/resolve", () => ({ resolveLyricForPreload: mocks.resolveLyric }));
+vi.mock("@/services/lyric/preload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/lyric/preload")>();
+  mocks.preload = actual;
+  return {
+    ...actual,
+    preloadLyricForTrack: mocks.lyric,
+    invalidatePreloadedLyric: vi.fn(actual.invalidatePreloadedLyric),
+  };
+});
 
 describe("下一曲真实预载", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.resolve.mockReset();
+    mocks.resolveLyric.mockReset();
+    mocks.lyric.mockReset();
+    mocks.settings.lyric.smartPreferOnline = false;
+    mocks.settings.lyric.lyricFormatOrder = [];
     mocks.status = reactive({ ...mocks.status, state: "playing", trackLoading: false });
     mocks.settings = reactive(mocks.settings);
     mocks.settings.player.preloadNextTrack = true;
+    mocks.settings.player.preloadLyric = false;
     mocks.settings.player.transitionMode = "crossfade";
     mocks.settings.player.transitionPreference = "standard";
     mocks.settings.system.cache.songCache = { enabled: true, cacheStreaming: true };
@@ -87,6 +100,369 @@ describe("下一曲真实预载", () => {
   afterEach(async () => {
     const preloader = await import("./nextTrackPreloader");
     preloader.disposeNextTrackPreload();
+  });
+
+  it.each([false, true])("音频预载未命中时仍保留匹配的歌词，音频开关：%s", async (audioEnabled) => {
+    mocks.settings.player.preloadNextTrack = audioEnabled;
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = {
+      id: "local",
+      source: "local",
+      title: "Local",
+      artists: [],
+      path: "/music/local.flac",
+    };
+    const lyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    mocks.resolveLyric.mockResolvedValue(lyric);
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    actual.preloadLyricForTrack(track);
+    await flushPromises();
+
+    expect(preloader.consumePreloadedTrack(track)).toBeNull();
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: false });
+  });
+
+  it.each(["曲目不匹配", "上下文变化", "未完成", "无歌词", "失败", "关闭歌词预载"])(
+    "切歌清理无效歌词预载：%s",
+    async (reason) => {
+      mocks.settings.player.preloadNextTrack = false;
+      mocks.settings.player.preloadLyric = true;
+      const track: Track = {
+        id: "local",
+        source: "local",
+        title: "Local",
+        artists: [],
+        path: "/music/local.flac",
+      };
+      const lyric = {
+        source: { source: "external", format: "lrc" },
+        input: { content: "[00:01.00]歌词" },
+      };
+      if (reason === "未完成") mocks.resolveLyric.mockReturnValue(new Promise(() => {}));
+      else if (reason === "失败") mocks.resolveLyric.mockRejectedValue(new Error("IPC failed"));
+      else mocks.resolveLyric.mockResolvedValue(reason === "无歌词" ? null : lyric);
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const preloader = await import("./nextTrackPreloader");
+      const actual = mocks.preload!;
+      actual.preloadLyricForTrack(track);
+      await flushPromises();
+      if (reason === "关闭歌词预载") mocks.settings.player.preloadLyric = false;
+      if (reason === "上下文变化") mocks.settings.lyric.smartPreferOnline = true;
+      preloader.consumePreloadedTrack(
+        reason === "曲目不匹配" ? { ...track, path: "/other.flac" } : track,
+      );
+      expect(actual.consumePreloadedLyric(track)).toEqual({ hit: false });
+      expect(mocks.resolveLyric.mock.lastCall?.[1]()).toBe(false);
+      warning.mockRestore();
+    },
+  );
+
+  it.each(["首次调度", "解析中", "已有缓存"])("关闭歌词预载时不解析歌词：%s", async (phase) => {
+    if (phase === "解析中") mocks.resolve.mockReturnValue(new Promise(() => {}));
+    else
+      mocks.resolve.mockResolvedValue({ source: "next.flac", provider: "local", fromCache: false });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    if (phase === "已有缓存") await flushPromises();
+    if (phase !== "首次调度") preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(mocks.lyric).not.toHaveBeenCalled();
+    expect(mocks.resolve).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["解析中", false],
+    ["解析中", true],
+    ["已有缓存", false],
+    ["已有缓存", true],
+    ["加载中", false],
+    ["加载中", true],
+    ["交接中", true],
+  ] as const)("关闭歌词预载清理歌词且保留音频：%s，歌词已完成：%s", async (phase, lyricReady) => {
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    mocks.candidate.track = track;
+    const source = { source: "next.flac", provider: "local", fromCache: false };
+    let finishAudio!: (value: typeof source) => void;
+    mocks.resolve.mockReturnValue(new Promise((resolve) => (finishAudio = resolve)));
+    let finishLyric!: (value: unknown) => void;
+    mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
+    const lyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    preloader.scheduleNextTrackPreload();
+    if (lyricReady) finishLyric(lyric);
+    if (phase !== "解析中") finishAudio(source);
+    await flushPromises();
+    const preparedId = preloader.peekPreparedTrack(track)?.preparedId;
+    if (phase === "交接中") {
+      expect(preloader.beginPreparedTransition(track)?.preparedId).toBe(preparedId);
+    }
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(true);
+    if (phase === "加载中") mocks.status.trackLoading = true;
+
+    mocks.settings.player.preloadLyric = false;
+    preloader.scheduleNextTrackPreload();
+
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(false);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.resolve).toHaveBeenCalledOnce();
+    if (phase === "解析中") finishAudio(source);
+    if (!lyricReady) finishLyric(lyric);
+    await flushPromises();
+    mocks.settings.player.preloadLyric = true;
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: false });
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+    if (phase === "交接中") {
+      preloader.finishPreparedTransition(preparedId!);
+      expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(preparedId);
+    } else {
+      expect(preloader.peekPreparedTrack(track)?.preparedId).toBeTruthy();
+      expect(mocks.cancel).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    ["解析中", "播放中"],
+    ["下载中", "播放中"],
+    ["已就绪", "播放中"],
+    ["解析中", "trackLoading"],
+    ["下载中", "trackLoading"],
+    ["已就绪", "trackLoading"],
+    ["解析中", "loading"],
+    ["下载中", "loading"],
+    ["已就绪", "loading"],
+  ])("监听音频预载关闭后清理任务且保留歌词：%s，状态：%s", async (phase, state) => {
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = { id: "next", source: "netease", title: "Next", artists: [] };
+    mocks.candidate.track = track;
+    let finishLyric!: (value: unknown) => void;
+    mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
+    let finishDownload!: (value: string) => void;
+    const cacheRequest = vi.fn(
+      (_id: string, _signal: AbortSignal) =>
+        new Promise<string>((resolve) => (finishDownload = resolve)),
+    );
+    const source = {
+      source: "https://music/next",
+      provider: "official",
+      fromCache: false,
+      cacheRequest,
+    };
+    let finishSource!: (value: typeof source) => void;
+    mocks.resolve.mockReturnValue(new Promise((resolve) => (finishSource = resolve)));
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    preloader.installNextTrackPreloadWatchers();
+    preloader.scheduleNextTrackPreload();
+    if (phase !== "解析中") finishSource(source);
+    await flushPromises();
+    if (phase === "已就绪") {
+      finishDownload("C:/cache/next.bin");
+      await flushPromises();
+      expect(preloader.peekPreparedTrack(track)?.preparedId).toBeTruthy();
+    }
+    mocks.status.trackLoading = state === "trackLoading";
+    if (state === "loading") mocks.status.state = "loading";
+    mocks.settings.player.preloadNextTrack = false;
+    await flushPromises();
+
+    expect(mocks.cancel).toHaveBeenCalledOnce();
+    if (phase !== "解析中") expect(cacheRequest.mock.calls[0][1].aborted).toBe(true);
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(true);
+    if (phase === "解析中") finishSource(source);
+    if (phase === "下载中") finishDownload("C:/cache/next.bin");
+    const lyric = {
+      source: { source: "online", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    finishLyric(lyric);
+    await flushPromises();
+    expect(mocks.prepare).toHaveBeenCalledTimes(phase === "已就绪" ? 1 : 0);
+    mocks.settings.player.preloadNextTrack = true;
+    expect(preloader.peekPreparedTrack(track)).toBeNull();
+    expect(preloader.consumePreloadedTrack(track)).toBeNull();
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
+    expect(mocks.resolveLyric).toHaveBeenCalledOnce();
+  });
+
+  it("播放中切换歌词预载开关立即调度和失效", async () => {
+    mocks.settings.player.preloadNextTrack = false;
+    const preloader = await import("./nextTrackPreloader");
+    const { invalidatePreloadedLyric } = await import("./lyric/preload");
+    preloader.installNextTrackPreloadWatchers();
+    mocks.settings.player.preloadLyric = true;
+    await flushPromises();
+    expect(mocks.lyric).toHaveBeenCalledExactlyOnceWith(mocks.candidate.track);
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    vi.mocked(invalidatePreloadedLyric).mockClear();
+    mocks.settings.player.preloadLyric = false;
+    await flushPromises();
+    expect(invalidatePreloadedLyric).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("准备音频时复用歌词预载，已有结果：%s", async (alreadyReady) => {
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    mocks.candidate.track = track;
+    mocks.resolve.mockResolvedValue({ source: "next.flac", provider: "local", fromCache: false });
+    let finishLyric!: (value: unknown) => void;
+    mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
+    const lyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    if (alreadyReady) {
+      mocks.settings.player.preloadNextTrack = false;
+      preloader.scheduleNextTrackPreload();
+      finishLyric(lyric);
+      await flushPromises();
+      mocks.settings.player.preloadNextTrack = true;
+    }
+
+    preloader.scheduleNextTrackPreload();
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    preloader.scheduleNextTrackPreload();
+    expect(mocks.resolveLyric).toHaveBeenCalledOnce();
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(true);
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+    if (!alreadyReady) {
+      finishLyric(lyric);
+      await flushPromises();
+    }
+    expect(preloader.consumePreloadedTrack(track)?.preparedId).toBeTruthy();
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
+  });
+
+  it.each(["音源为空", "音源异常", "缓存异常", "准备异常"])(
+    "音频预载失败时保留歌词并允许重试：%s",
+    async (failure) => {
+      mocks.settings.player.preloadLyric = true;
+      const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+      mocks.candidate.track = track;
+      const lyric = {
+        source: { source: "external", format: "lrc" },
+        input: { content: "[00:01.00]歌词" },
+      };
+      let finishLyric!: (value: unknown) => void;
+      mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
+      if (failure === "音源为空") mocks.resolve.mockResolvedValueOnce(null);
+      if (failure === "音源异常") mocks.resolve.mockRejectedValueOnce(new Error("source"));
+      if (failure === "缓存异常")
+        mocks.resolve.mockResolvedValueOnce({
+          source: "https://music/next",
+          provider: "official",
+          fromCache: false,
+          cacheRequest: vi.fn().mockRejectedValue(new Error("cache")),
+        });
+      if (failure === "准备异常") {
+        mocks.resolve.mockResolvedValueOnce({
+          source: "next.flac",
+          provider: "local",
+          fromCache: false,
+        });
+        mocks.prepare.mockRejectedValueOnce(new Error("prepare"));
+      }
+      const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const preloader = await import("./nextTrackPreloader");
+      const actual = mocks.preload!;
+      mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+      preloader.scheduleNextTrackPreload();
+      await flushPromises();
+      expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(true);
+      expect(mocks.cancel).toHaveBeenCalledOnce();
+      finishLyric(lyric);
+      await flushPromises();
+      mocks.resolve.mockResolvedValueOnce({
+        source: "next.flac",
+        provider: "local",
+        fromCache: false,
+      });
+      preloader.scheduleNextTrackPreload();
+      await flushPromises();
+      expect(mocks.resolveLyric).toHaveBeenCalledOnce();
+      expect(preloader.consumePreloadedTrack(track)?.preparedId).toBeTruthy();
+      expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
+      warning.mockRestore();
+    },
+  );
+
+  it.each([false, true])("歌词设置变化后重新预载，音频开关：%s", async (audioEnabled) => {
+    mocks.settings.player.preloadNextTrack = audioEnabled;
+    mocks.settings.player.preloadLyric = true;
+    mocks.settings.lyric.lyricFormatOrder = [];
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    mocks.candidate.track = track;
+    mocks.resolve.mockResolvedValue({ source: "next.flac", provider: "local", fromCache: false });
+    const oldLyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "[00:01.00]旧歌词" },
+    };
+    const newLyric = {
+      source: { source: "external", format: "ttml" },
+      input: { content: "新歌词" },
+    };
+    mocks.resolveLyric.mockResolvedValueOnce(oldLyric).mockResolvedValueOnce(newLyric);
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    preloader.installNextTrackPreloadWatchers();
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(actual.peekPreloadedLyric(track)).toEqual(oldLyric);
+    mocks.settings.lyric.lyricFormatOrder = ["ttml"];
+    await flushPromises();
+    expect(mocks.resolveLyric).toHaveBeenCalledTimes(2);
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(false);
+    expect(actual.peekPreloadedLyric(track)).toEqual(newLyric);
+    preloader.scheduleNextTrackPreload();
+    expect(mocks.resolveLyric).toHaveBeenCalledTimes(2);
+    preloader.consumePreloadedTrack(track);
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric: newLyric });
+    if (audioEnabled) expect(mocks.prepare).toHaveBeenCalledOnce();
+    else expect(mocks.resolve).not.toHaveBeenCalled();
+  });
+
+  it("候选歌曲身份变化时不会复用旧歌词", async () => {
+    mocks.settings.player.preloadNextTrack = false;
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = { id: "next", source: "local", title: "旧标题", artists: [] };
+    mocks.candidate.track = track;
+    const oldLyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "旧歌词" },
+    };
+    const newLyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "新歌词" },
+    };
+    mocks.resolveLyric.mockResolvedValueOnce(oldLyric).mockResolvedValueOnce(newLyric);
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    const newTrack = { ...track, title: "新标题" };
+    mocks.candidate.track = newTrack;
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(mocks.resolveLyric).toHaveBeenCalledTimes(2);
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(false);
+    expect(actual.consumePreloadedLyric(newTrack)).toEqual({ hit: true, lyric: newLyric });
   });
 
   it("已下载歌曲直接准备原生预载槽位", async () => {
@@ -496,6 +872,79 @@ describe("下一曲真实预载", () => {
     finish(true);
     await flushPromises();
     expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)).toBeNull();
+  });
+
+  it.each([
+    { enabled: false, cacheStreaming: false },
+    { enabled: true, cacheStreaming: false },
+    { enabled: false, cacheStreaming: true },
+  ])("音频缓存不可用时保留在途歌词预载：%j", async (cache) => {
+    mocks.settings.player.preloadLyric = true;
+    mocks.settings.system.cache.songCache = cache;
+    const track: Track = {
+      id: "next",
+      source: "streaming",
+      title: "Next",
+      artists: [{ name: "Artist" }],
+    };
+    mocks.candidate.track = track;
+    let finishLyric!: (value: unknown) => void;
+    mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+
+    preloader.scheduleNextTrackPreload();
+    preloader.scheduleNextTrackPreload();
+    expect(mocks.resolveLyric).toHaveBeenCalledOnce();
+    expect(mocks.resolveLyric.mock.calls[0][1]()).toBe(true);
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    const lyric = {
+      source: { source: "online", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    finishLyric(lyric);
+    await flushPromises();
+    expect(preloader.consumePreloadedTrack(track)).toBeNull();
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
+  });
+
+  it("关闭流媒体缓存会取消在途音频并保留歌词", async () => {
+    mocks.settings.player.preloadLyric = true;
+    const track: Track = { id: "next", source: "streaming", title: "Next", artists: [] };
+    mocks.candidate.track = track;
+    const lyric = {
+      source: { source: "online", format: "lrc" },
+      input: { content: "[00:01.00]歌词" },
+    };
+    mocks.resolveLyric.mockResolvedValue(lyric);
+    let finishAudio!: (value: string) => void;
+    const cacheRequest = vi.fn(
+      (_id: string, _signal: AbortSignal) =>
+        new Promise<string>((resolve) => (finishAudio = resolve)),
+    );
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/next",
+      provider: "official",
+      fromCache: false,
+      cacheRequest,
+    });
+    const preloader = await import("./nextTrackPreloader");
+    const actual = mocks.preload!;
+    mocks.lyric.mockImplementation(actual.preloadLyricForTrack);
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+
+    mocks.settings.system.cache.songCache.cacheStreaming = false;
+    preloader.scheduleNextTrackPreload();
+    const [id, signal] = cacheRequest.mock.calls[0]!;
+    expect(signal.aborted).toBe(true);
+    expect(mocks.cancel).toHaveBeenCalledWith(id);
+    finishAudio("C:/cache/next.bin");
+    await flushPromises();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(preloader.consumePreloadedTrack(track)).toBeNull();
+    expect(actual.consumePreloadedLyric(track)).toEqual({ hit: true, lyric });
   });
 
   it("关闭缓存后不再启动预载", async () => {
