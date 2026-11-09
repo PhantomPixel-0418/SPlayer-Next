@@ -966,6 +966,10 @@
       "label": "Preload next track",
       "description": "Cache and decode the next track in advance, which may increase network usage"
     },
+    "preloadLyric": {
+      "label": "Preload next track lyrics",
+      "description": "Preloads lyrics only, so lyrics display faster after track change"
+    },
     "outputDevice": {
       "label": "Output Device",
       "description": "Select audio output device",

@@ -172,6 +172,7 @@ export const useSettingsStore = defineStore(
       showLyricInBar: true,
       barLyricMode: "translation",
       preloadNextTrack: false,
+      preloadLyric: false,
       transitionMode: "none",
       transitionPreference: "standard",
       automixCrossfadeFallback: true,

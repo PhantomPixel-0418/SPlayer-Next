@@ -1,5 +1,5 @@
 import type { Platform } from "./platform";
-import type { Track } from "./player";
+import type { IpcResponse, Track } from "./player";
 import type { LyricFormat, LyricInput } from "lyric-kit";
 
 /** 默认格式优先级 */
@@ -44,6 +44,12 @@ export interface LyricMatchResult extends LyricInput {
   extra?: LyricMatchExtra;
 }
 
+/** 本地歌曲的外部歌词文件 */
+export interface LocalExternalLyric {
+  format: LyricFormat;
+  path: string;
+}
+
 /** 歌词匹配 IPC 响应 */
 export type LyricMatchResponse =
   { ok: true; data: LyricMatchResult | null } | { ok: false; error: string };
@@ -67,4 +73,6 @@ export interface LyricsApi {
   matchLocalTTML: (track: Track) => Promise<LyricTTMLResponse>;
   /** 弹出目录选择器，返回所选本地 TTML 歌词库目录 */
   pickLyricRepoDir: () => Promise<string | null>;
+  /** 枚举本地音频同目录下的外挂歌词文件，供下一首歌词预载提前选定最优格式 */
+  findLocalExternalLyrics: (audioPath: string) => Promise<IpcResponse<LocalExternalLyric[]>>;
 }

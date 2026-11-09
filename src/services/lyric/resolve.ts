@@ -337,10 +337,35 @@ export const resolveStreamingByPreference = async (
 };
 
 /**
- * 从本地 TTML 仓库解析歌词
- * @param track - 歌曲信息
- * @returns 本地仓库歌词，不存在则返回 null
+ * 枚举本地歌曲同目录下的外挂歌词文件，按格式优先级选定最优并读取内容
+ * 仅用于下一首歌词预载；内嵌歌词需等主进程解码后再现读
+ * @param track - 本地歌曲（需携带 path）
+ * @returns 最优外挂歌词，无可用外挂歌词时返回 null
  */
+export const resolveLocalExternalLyrics = async (track: Track): Promise<ResolvedLyric | null> => {
+  if (!track.path) return null;
+  const resp = await window.api.lyrics.findLocalExternalLyrics(track.path);
+  if (!resp.success || !resp.data?.length) return null;
+  const settings = useSettingsStore();
+  const order = settings.lyric.lyricFormatOrder ?? DEFAULT_LYRIC_FORMAT_ORDER;
+  let best: { format: LyricFormat; path: string } | null = null;
+  let bestRank = order.length;
+  for (const ext of resp.data) {
+    const rank = order.indexOf(ext.format);
+    if (rank !== -1 && rank < bestRank) {
+      bestRank = rank;
+      best = ext;
+    }
+  }
+  if (!best) return null;
+  const read = await window.api.player.readLyricFile(best.path);
+  if (!read.success || read.data == null) return null;
+  return {
+    source: { source: "external", format: best.format },
+    input: { content: read.data },
+  };
+};
+
 export const resolveLocalRepoLyric = async (track: Track): Promise<ResolvedLyric | null> => {
   const settings = useSettingsStore();
   if (
@@ -407,7 +432,11 @@ export const resolveLyricForPreload = async (
   track: Track,
   shouldContinue: () => boolean,
 ): Promise<ResolvedLyric | null> => {
-  if (track.source === "local") return null;
+  if (track.source === "local") {
+    const local = await resolveLocalExternalLyrics(track);
+    if (!shouldContinue()) return null;
+    return local;
+  }
 
   const localRepo = await resolveLocalRepoLyric(track);
   if (!shouldContinue()) return null;
