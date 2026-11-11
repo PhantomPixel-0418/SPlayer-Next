@@ -780,6 +780,7 @@
       "lyricContent": "歌词内容",
       "lyricTTML": "TTML 歌词",
       "lyricExclude": "歌词排除",
+      "lyricTranslationPronunciation": "翻译与发音",
       "lyricGeneral": "内容样式",
       "lyricDisplay": "显示效果",
       "lyricAMLLOptimize": "歌词优化",
@@ -1055,6 +1056,44 @@
     "detectBackgroundLyrics": {
       "label": "自动识别背景歌词",
       "description": "根据括号识别背景人声，误判时可关闭"
+    },
+
+    "llmTranslation": {
+      "label": "LLM 补充翻译",
+      "description": "仅补充当前语言缺失的译文；启用后会将歌词发送到所配置的 API，可能产生费用，结果会缓存并标记为自动生成"
+    },
+    "pronunciationOptimization": {
+      "label": "优化发音",
+      "description": "选择发音优化方式；LLM 模式会将歌词发送到所配置的 API，可能产生费用，结果会缓存并标记为自动生成",
+      "off": "关闭",
+      "llm": "LLM 生成",
+      "dictionary": "离线词典（日语）"
+    },
+    "lyricEnhancement": {
+      "modelTitle": "歌词增强模型",
+      "noModel": "尚未选择模型",
+      "configureModel": "配置模型",
+      "dictionaryTitle": "离线发音词典",
+      "dictionaryDescription": "基于 Kuromoji 与 IPADIC，目前仅支持日语发音优化；词典约 17–21 MB",
+      "installed": "已安装",
+      "notInstalled": "未安装",
+      "downloadDictionary": "下载词典",
+      "removeDictionary": "移除词典",
+      "clearCache": "清除生成缓存",
+      "cacheCleared": "歌词增强缓存已清除",
+      "generatedTranslation": "AI 翻译 · 自动生成",
+      "generatedPronunciation": "AI 发音 · 自动生成",
+      "dictionaryPronunciation": "词典发音 · 自动生成",
+      "lineFallback": "部分发音使用逐行显示",
+      "processing": "正在补充翻译和发音…",
+      "failed": "歌词增强未完成"
+    },
+    "pronunciationAlignment": {
+      "label": "自动发音对齐",
+      "description": "逐字：每个词单独对齐；逐行：整行发音；自动：按歌词整体情况统一",
+      "auto": "自动",
+      "word": "逐字",
+      "line": "逐行"
     },
     "cjkTransform": {
       "label": "繁简转换",

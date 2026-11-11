@@ -191,6 +191,8 @@ export const useSettingsStore = defineStore(
 
     /** 歌词 */
     const lyric = reactive<LyricSettings>({
+      llmTranslation: false,
+      pronunciationOptimization: "off",
       lyricSourcePreference: "auto",
       lyricSourceOrder: [...DEFAULT_LYRIC_SOURCE_ORDER],
       lyricFormatOrder: [...DEFAULT_LYRIC_FORMAT_ORDER],
@@ -398,6 +400,11 @@ export const useSettingsStore = defineStore(
           appearance: AppearanceSettings;
         };
         lyric.lyricSourceOrder = reconcileOrder(lyric.lyricSourceOrder, ALL_PLATFORMS);
+        // 增强相关设置缺失时补默认，避免旧数据把开关带到非法值
+        if (typeof lyric.llmTranslation !== "boolean") lyric.llmTranslation = false;
+        if (!(["off", "llm", "dictionary"] as const).includes(lyric.pronunciationOptimization)) {
+          lyric.pronunciationOptimization = "off";
+        }
         lyric.lyricFormatOrder = reconcileOrder(lyric.lyricFormatOrder, DEFAULT_LYRIC_FORMAT_ORDER);
         appearance.sidebarNavGroups = reconcileNavGroups(appearance.sidebarNavGroups ?? []);
         appearance.sidebarHiddenKeys = reconcileHiddenKeys(appearance.sidebarHiddenKeys ?? []);

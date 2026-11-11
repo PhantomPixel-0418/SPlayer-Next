@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ handle: vi.fn(), access: vi.fn() }));
@@ -33,11 +34,12 @@ describe("外挂歌词异步发现", () => {
       if (!path.endsWith(".ttml") && !path.endsWith(".lrc")) throw new Error("unavailable");
     });
     const handler = discoveryHandler();
+    // join 让期望路径跟随 node:path 的平台分隔符，避免 Windows 上 /\ 差异
     await expect(handler({}, "/music/song.flac")).resolves.toEqual({
       success: true,
       data: [
-        { format: "ttml", path: "/music/song.ttml" },
-        { format: "lrc", path: "/music/song.lrc" },
+        { format: "ttml", path: join("/music", "song.ttml") },
+        { format: "lrc", path: join("/music", "song.lrc") },
       ],
     });
     expect(mocks.access).toHaveBeenCalledTimes(8);

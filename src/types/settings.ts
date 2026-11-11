@@ -6,6 +6,7 @@ import type { MotionCoverSource, TransitionPreference } from "@shared/types/play
 import type { TransitionMode } from "@shared/types/automix";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import type { CjkTransformMode } from "@shared/types/opencc";
+import type { PronunciationOptimization } from "@shared/types/lyricEnhancement";
 import type { QualityLevel } from "@/utils/quality";
 import type { LyricAlignment } from "lyric-dom";
 import type { PaletteAlgorithm } from "@applemusic-like-lyrics/core";
@@ -140,6 +141,10 @@ export const DEFAULT_SIDEBAR_NAV_GROUPS: SidebarNavGroup[] = [
 
 /** 歌词设置 */
 export interface LyricSettings {
+  /** 是否使用 AI 补充当前语言缺失的歌词翻译 */
+  llmTranslation: boolean;
+  /** 发音优化方式 */
+  pronunciationOptimization: PronunciationOptimization;
   /** 歌词来源偏好 */
   lyricSourcePreference: LyricSourcePreference;
   /** 音源顺序 */

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync as atomicWriteSync } from "atomically";
 import { configDir } from "@main/utils/paths";
 import { ipcLog } from "@main/utils/logger";
-import { encryptSecret, isSecureStorageAvailable } from "@main/utils/secureStorage";
+import { decryptSecret, encryptSecret, isSecureStorageAvailable } from "@main/utils/secureStorage";
 import type {
   AiModelConfig,
   AiModelProtocol,
@@ -90,6 +90,28 @@ const normalizeInput = (input: AiModelSaveInput): Omit<AiModelSaveInput, "id" | 
  * @returns 不包含密钥明文的模型配置
  */
 export const listAiModels = (): AiModelState => toPublicState(readPersisted());
+
+/**
+ * 获取主进程使用的当前模型及解密密钥
+ * @returns 当前模型，未启用时返回 null
+ */
+export const getActiveAiModel = async (): Promise<{
+  protocol: AiModelProtocol;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+} | null> => {
+  const state = readPersisted();
+  const selected = state.models.find((item) => item.id === state.activeModelId);
+  if (!selected) return null;
+  const { plainText } = await decryptSecret(Buffer.from(selected.encryptedApiKey, "base64"));
+  return {
+    protocol: selected.protocol,
+    baseUrl: selected.baseUrl,
+    model: selected.model,
+    apiKey: plainText,
+  };
+};
 
 /**
  * 保存 AI 模型配置

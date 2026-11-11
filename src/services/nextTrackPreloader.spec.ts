@@ -111,6 +111,7 @@ describe("下一曲真实预载", () => {
       title: "Local",
       artists: [],
       path: "/music/local.flac",
+      duration: 0,
     };
     const lyric = {
       source: { source: "external", format: "lrc" },
@@ -138,6 +139,7 @@ describe("下一曲真实预载", () => {
         title: "Local",
         artists: [],
         path: "/music/local.flac",
+        duration: 0,
       };
       const lyric = {
         source: { source: "external", format: "lrc" },
@@ -185,7 +187,7 @@ describe("下一曲真实预载", () => {
     ["交接中", true],
   ] as const)("关闭歌词预载清理歌词且保留音频：%s，歌词已完成：%s", async (phase, lyricReady) => {
     mocks.settings.player.preloadLyric = true;
-    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [], duration: 0 };
     mocks.candidate.track = track;
     const source = { source: "next.flac", provider: "local", fromCache: false };
     let finishAudio!: (value: typeof source) => void;
@@ -243,7 +245,7 @@ describe("下一曲真实预载", () => {
     ["已就绪", "loading"],
   ])("监听音频预载关闭后清理任务且保留歌词：%s，状态：%s", async (phase, state) => {
     mocks.settings.player.preloadLyric = true;
-    const track: Track = { id: "next", source: "netease", title: "Next", artists: [] };
+    const track: Track = { id: "next", source: "netease", title: "Next", artists: [], duration: 0 };
     mocks.candidate.track = track;
     let finishLyric!: (value: unknown) => void;
     mocks.resolveLyric.mockReturnValue(new Promise((resolve) => (finishLyric = resolve)));
@@ -313,7 +315,7 @@ describe("下一曲真实预载", () => {
 
   it.each([false, true])("准备音频时复用歌词预载，已有结果：%s", async (alreadyReady) => {
     mocks.settings.player.preloadLyric = true;
-    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [], duration: 0 };
     mocks.candidate.track = track;
     mocks.resolve.mockResolvedValue({ source: "next.flac", provider: "local", fromCache: false });
     let finishLyric!: (value: unknown) => void;
@@ -352,7 +354,7 @@ describe("下一曲真实预载", () => {
     "音频预载失败时保留歌词并允许重试：%s",
     async (failure) => {
       mocks.settings.player.preloadLyric = true;
-      const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+      const track: Track = { id: "next", source: "local", title: "Next", artists: [], duration: 0 };
       mocks.candidate.track = track;
       const lyric = {
         source: { source: "external", format: "lrc" },
@@ -405,7 +407,7 @@ describe("下一曲真实预载", () => {
     mocks.settings.player.preloadNextTrack = audioEnabled;
     mocks.settings.player.preloadLyric = true;
     mocks.settings.lyric.lyricFormatOrder = [];
-    const track: Track = { id: "next", source: "local", title: "Next", artists: [] };
+    const track: Track = { id: "next", source: "local", title: "Next", artists: [], duration: 0 };
     mocks.candidate.track = track;
     mocks.resolve.mockResolvedValue({ source: "next.flac", provider: "local", fromCache: false });
     const oldLyric = {
@@ -440,7 +442,7 @@ describe("下一曲真实预载", () => {
   it("候选歌曲身份变化时不会复用旧歌词", async () => {
     mocks.settings.player.preloadNextTrack = false;
     mocks.settings.player.preloadLyric = true;
-    const track: Track = { id: "next", source: "local", title: "旧标题", artists: [] };
+    const track: Track = { id: "next", source: "local", title: "旧标题", artists: [], duration: 0 };
     mocks.candidate.track = track;
     const oldLyric = {
       source: { source: "external", format: "lrc" },
@@ -886,6 +888,7 @@ describe("下一曲真实预载", () => {
       source: "streaming",
       title: "Next",
       artists: [{ name: "Artist" }],
+      duration: 0,
     };
     mocks.candidate.track = track;
     let finishLyric!: (value: unknown) => void;
@@ -911,7 +914,13 @@ describe("下一曲真实预载", () => {
 
   it("关闭流媒体缓存会取消在途音频并保留歌词", async () => {
     mocks.settings.player.preloadLyric = true;
-    const track: Track = { id: "next", source: "streaming", title: "Next", artists: [] };
+    const track: Track = {
+      id: "next",
+      source: "streaming",
+      title: "Next",
+      artists: [],
+      duration: 0,
+    };
     mocks.candidate.track = track;
     const lyric = {
       source: { source: "online", format: "lrc" },

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Artist } from "@shared/types/player";
+import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
@@ -114,6 +115,24 @@ const showLosslessIcon = computed(() => {
 /** 歌词格式标签 */
 const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO-LRC");
 
+/** 当前展示内容的自动生成来源 */
+const generatedLyricLabels = computed(() => {
+  const lines = media.parsedLyric as EnhancedLyricLine[];
+  const labels: string[] = [];
+  if (lines.some((line) => line.generatedTranslation))
+    labels.push(t("settings.lyricEnhancement.generatedTranslation"));
+  if (lines.some((line) => line.generatedPronunciation?.method === "llm"))
+    labels.push(t("settings.lyricEnhancement.generatedPronunciation"));
+  if (lines.some((line) => line.generatedPronunciation?.method === "dictionary"))
+    labels.push(t("settings.lyricEnhancement.dictionaryPronunciation"));
+  // 仅当逐字与逐行混排时才提示逐行回退；整份歌词统一为逐行时不再提示
+  const hasWordAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "word");
+  const hasLineAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "line");
+  if (hasWordAlignment && hasLineAlignment)
+    labels.push(t("settings.lyricEnhancement.lineFallback"));
+  return labels;
+});
+
 /** 专辑文本 */
 const albumText = computed(() => displayTrack.value?.album?.name ?? "");
 
@@ -224,6 +243,33 @@ const alignItems = computed(() => {
         @click="goToResource(albumTarget)"
       >
         {{ albumText }}
+      </span>
+    </div>
+    <div
+      v-if="
+        !simple &&
+        (generatedLyricLabels.length ||
+          media.lyricEnhancementPending ||
+          media.lyricEnhancementWarnings.length)
+      "
+      class="flex max-w-full flex-wrap items-center gap-1.5 text-xs text-cover/70"
+      aria-live="polite"
+    >
+      <span
+        v-for="label in generatedLyricLabels"
+        :key="label"
+        class="rounded border border-solid border-cover/25 px-1.5 py-0.5"
+      >
+        {{ label }}
+      </span>
+      <span v-if="media.lyricEnhancementPending">
+        {{ t("settings.lyricEnhancement.processing") }}
+      </span>
+      <span
+        v-if="media.lyricEnhancementWarnings.length"
+        :title="media.lyricEnhancementWarnings.join(' · ')"
+      >
+        {{ t("settings.lyricEnhancement.failed") }}
       </span>
     </div>
     <!-- 播放来源 -->
