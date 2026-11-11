@@ -24,6 +24,7 @@ const buildTrackKey = (track: Track): string =>
     track.originalId ?? "",
     track.id,
     track.extId ?? "",
+    track.path ?? "",
     track.title,
     track.artists.map((artist) => artist.name),
   ]);
@@ -60,13 +61,10 @@ export const invalidatePreloadedLyric = (): void => {
 
 /**
  * 预载候选歌曲的最终歌词结果
+ * 本地歌曲同步枚举同目录外挂歌词并按格式优先级选定，在线/流媒体走网络解析
  * @param track - 候选歌曲
  */
 export const preloadLyricForTrack = (track: Track): void => {
-  if (track.source === "local") {
-    invalidatePreloadedLyric();
-    return;
-  }
   const trackKey = buildTrackKey(track);
   const contextKey = buildContextKey();
   if (preloaded?.trackKey === trackKey && preloaded.contextKey === contextKey) return;
@@ -84,21 +82,32 @@ export const preloadLyricForTrack = (track: Track): void => {
 };
 
 /**
+ * 查看目标歌曲的有效预载歌词，不消费结果
+ * @param track - 即将加载的歌曲
+ * @returns 已完成且身份和上下文匹配的歌词，否则返回 null
+ */
+export const peekPreloadedLyric = (track: Track): ResolvedLyric | null => {
+  if (
+    !preloaded?.lyric ||
+    preloaded.trackKey !== buildTrackKey(track) ||
+    preloaded.contextKey !== buildContextKey()
+  )
+    return null;
+  return preloaded.lyric;
+};
+
+/**
  * 消费目标歌曲的歌词预载结果
  * 预载未完成时直接放弃，正常流程会复用主进程的请求去重和缓存，不必等待
  * @param track - 即将加载的歌曲
  * @returns 命中状态和歌词结果
  */
 export const consumePreloadedLyric = (track: Track): PreloadedLyricResult => {
-  const current = preloaded;
-  if (
-    !current?.lyric ||
-    current.trackKey !== buildTrackKey(track) ||
-    current.contextKey !== buildContextKey()
-  ) {
+  const lyric = peekPreloadedLyric(track);
+  if (!lyric) {
     invalidatePreloadedLyric();
     return { hit: false };
   }
   preloaded = null;
-  return { hit: true, lyric: current.lyric };
+  return { hit: true, lyric };
 };

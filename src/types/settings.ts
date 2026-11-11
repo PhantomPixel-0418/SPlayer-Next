@@ -313,6 +313,8 @@ export interface PlayerSettings {
   barLyricMode: "lyric" | "translation" | "word";
   /** 播放时提前获取下一首的播放数据 */
   preloadNextTrack: boolean;
+  /** 播放时提前获取下一首歌词（不预载原生音频槽位） */
+  preloadLyric: boolean;
   /** 相邻曲目的播放过渡方式 */
   transitionMode: TransitionMode;
   /** 曲尾交接时机与淡化时长偏好 */

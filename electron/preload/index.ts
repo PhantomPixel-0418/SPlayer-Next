@@ -571,6 +571,9 @@ const api = {
     matchLocalTTML: (track: unknown) => ipcRenderer.invoke("lyrics:matchLocalTTML", track),
     // 选择本地 TTML 歌词库目录
     pickLyricRepoDir: () => ipcRenderer.invoke("lyrics:pickLyricRepoDir"),
+    // 枚举本地音频同目录下的外挂歌词文件，供下一首歌词预载
+    findLocalExternalLyrics: (audioPath: string) =>
+      ipcRenderer.invoke("lyrics:findLocalExternalLyrics", audioPath),
   },
   opencc: {
     // 转换单个文本

@@ -401,20 +401,30 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
       await loadStreamingLyric(token, track, detail);
       return;
     }
-    // 本地文件
-    const local = detail ? await readLocal(detail) : null;
+    // 本地文件：复用已消费的预载结果，否则现读本地歌词文件
+    let local = preloaded;
+    if (!local.hit && detail) {
+      const read = await readLocal(detail);
+      local = read ? { hit: true, lyric: localToResolved(read) } : { hit: false };
+    }
     if (token !== currentToken) return;
-    // 本地立即显示
-    if (local) commitLocal(token, local);
+    const localLyric = local.hit
+      ? { source: local.lyric.source, content: local.lyric.input.content }
+      : null;
+    if (localLyric)
+      commitCandidate(token, track, {
+        source: localLyric.source,
+        input: { content: localLyric.content },
+      });
     // 本地文件存在但解析后空
-    const hasUsableLocal = !!local && media.parsedLyric.length > 0;
+    const hasUsableLocal = !!localLyric && media.parsedLyric.length > 0;
     // 在线匹配后拿到平台 ID 会再查一次
     applyLocalTTMLOverlay(token, track);
 
     await withPluginPrefer(token, track, async () => {
       // 按偏好获取歌词
       const online = await resolveOnlineByPreference(track, {
-        local: hasUsableLocal ? localToResolved(local) : null,
+        local: hasUsableLocal ? localToResolved(localLyric!) : null,
         onCandidate: (lyric) => commitCandidate(token, track, lyric),
         shouldContinue: () => token === currentToken,
       });
@@ -424,7 +434,7 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
       if (online) {
         // TTML 先到时不被基础歌词盖掉
         if (media.activeLyric?.source === "online" && media.activeLyric.format === "ttml") return;
-        applyOnline(token, track, online, local);
+        applyOnline(token, track, online, localLyric);
       } else if (
         !hasUsableLocal &&
         useMediaStore().parsedLyric.length === 0 &&

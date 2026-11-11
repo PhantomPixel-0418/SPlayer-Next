@@ -240,3 +240,50 @@ test("无效模型响应不会缓存", async (t) => {
     });
   }
 });
+
+test("拒绝向非回环 HTTP 地址发送密钥", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "http://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    optimizeWithJapaneseDictionary: async (lines) => lines,
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, translation: "hello" }]);
+    },
+  });
+  const result = await service.enhanceLyrics(input());
+  assert.equal(calls, 0);
+  assert.equal(result.lines[0].translatedLyric, "");
+  assert.deepEqual(result.warnings, ["AI 歌词翻译失败"]);
+});
+
+test("本地回环地址允许使用 HTTP", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let requested = "";
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    optimizeWithJapaneseDictionary: async (lines) => lines,
+    fetch: async (url) => {
+      requested = String(url);
+      return openai([{ id: 0, translation: "hello" }]);
+    },
+  });
+  const result = await service.enhanceLyrics(input());
+  assert.equal(requested, "http://127.0.0.1:11434/v1/chat/completions");
+  assert.equal(result.lines[0].translatedLyric, "hello");
+});

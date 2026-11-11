@@ -6,7 +6,11 @@ import type { Track } from "@shared/types/player";
 import type { ResolvedTrackSource } from "@/services/audioSource";
 import { resolveTrackSource } from "@/services/audioSource";
 import { getNextTrackCandidate } from "@/core/player/candidate";
-import { invalidatePreloadedLyric, preloadLyricForTrack } from "@/services/lyric/preload";
+import {
+  invalidatePreloadedLyric,
+  peekPreloadedLyric,
+  preloadLyricForTrack,
+} from "@/services/lyric/preload";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
 import { useStreamingStore } from "@/stores/streaming";
@@ -102,9 +106,9 @@ const preloadCover = async (url: string): Promise<void> => {
 };
 
 /**
- * 作废当前的预载缓存
+ * 清理音频预载任务与原生槽位
  */
-export const invalidateNextTrackPreload = (): void => {
+const clearAudioPreload = (): void => {
   currentToken++;
   preloadAbort?.abort();
   preloadAbort = null;
@@ -116,6 +120,11 @@ export const invalidateNextTrackPreload = (): void => {
     pendingCover.src = "";
     pendingCover = null;
   }
+};
+
+/** 作废音频和歌词预载缓存 */
+export const invalidateNextTrackPreload = (): void => {
+  clearAudioPreload();
   invalidatePreloadedLyric();
 };
 
@@ -125,22 +134,24 @@ export const invalidateNextTrackPreload = (): void => {
  * @returns 匹配的预载结果，未命中或已作废则返回 null
  */
 export const consumePreloadedTrack = (track: Track): NextTrackPreloadResult | null => {
-  if (!useSettingsStore().player.preloadNextTrack) {
-    invalidateNextTrackPreload();
+  const settings = useSettingsStore();
+  if (!settings.player.preloadLyric || !peekPreloadedLyric(track)) invalidatePreloadedLyric();
+  if (!settings.player.preloadNextTrack) {
+    clearAudioPreload();
     return null;
   }
   const currentKey = buildContextKey(track);
   if (!cachedResult) {
-    invalidateNextTrackPreload();
+    clearAudioPreload();
     return null;
   }
   if (cachedResult.trackId !== track.id) {
-    invalidateNextTrackPreload();
+    clearAudioPreload();
     return null;
   }
   if (cachedResult.contextKey !== currentKey) {
     // 上下文已改变（如切换了音质），当前缓存作废
-    invalidateNextTrackPreload();
+    clearAudioPreload();
     return null;
   }
   const result = cachedResult;
@@ -210,12 +221,13 @@ export const finishPreparedTransition = (id: string, rejected?: NextTrackPreload
  * 调度下一首预载任务
  */
 export const scheduleNextTrackPreload = (): void => {
-  if (transitionPreparedId) return;
   const settings = useSettingsStore();
-  if (!settings.player.preloadNextTrack) {
-    invalidateNextTrackPreload();
-    return;
-  }
+  const preloadLyric = settings.player.preloadLyric;
+  if (!preloadLyric) invalidatePreloadedLyric();
+  if (transitionPreparedId) return;
+  const preloadTrack = settings.player.preloadNextTrack;
+  if (!preloadTrack) clearAudioPreload();
+  if (!preloadLyric && !preloadTrack) return;
 
   const status = useStatusStore();
   if (status.state === "stopped" || status.state === "idle") {
@@ -243,28 +255,34 @@ export const scheduleNextTrackPreload = (): void => {
   }
 
   const candidateTrack = candidateResult.track;
+
+  // 歌词模块按歌曲身份及歌词设置去重
+  if (preloadLyric) preloadLyricForTrack(candidateTrack);
+
+  // 仅预载歌词时无需准备原生槽位
+  if (!preloadTrack) return;
+
   if (
     candidateTrack.source !== "local" &&
     (!settings.system.cache.songCache.enabled || !settings.system.cache.songCache.cacheStreaming)
   ) {
-    invalidateNextTrackPreload();
+    if (preloadLyric) clearAudioPreload();
+    else invalidateNextTrackPreload();
     return;
   }
   const contextKey = buildContextKey(candidateTrack);
   // 上下文指纹一致且已有缓存，避免重复触发
   if (cachedResult && cachedResult.contextKey === contextKey) {
-    preloadLyricForTrack(candidateTrack);
     return;
   }
 
   // 避免在异步生成过程中重复调度同一 contextKey
   if (currentContextKey === contextKey && !cachedResult) {
-    preloadLyricForTrack(candidateTrack);
     return;
   }
 
-  invalidateNextTrackPreload();
-  preloadLyricForTrack(candidateTrack);
+  if (preloadLyric) clearAudioPreload();
+  else invalidateNextTrackPreload();
   const token = ++currentToken;
   const id = crypto.randomUUID();
   const abort = new AbortController();
@@ -284,7 +302,8 @@ export const scheduleNextTrackPreload = (): void => {
       });
       if (token !== currentToken) return;
       if (!source) {
-        invalidateNextTrackPreload();
+        if (settings.player.preloadLyric) clearAudioPreload();
+        else invalidateNextTrackPreload();
         return;
       }
       if (source.cacheRequest) {
@@ -329,7 +348,8 @@ export const scheduleNextTrackPreload = (): void => {
         title: candidateTrack.title,
         error: err,
       });
-      invalidateNextTrackPreload();
+      if (settings.player.preloadLyric) clearAudioPreload();
+      else invalidateNextTrackPreload();
     }
   })();
 };
@@ -346,6 +366,7 @@ export const installNextTrackPreloadWatchers = (): void => {
   stopContextWatch = watch(
     () => [
       settings.player.preloadNextTrack,
+      settings.player.preloadLyric,
       settings.player.transitionMode,
       settings.player.transitionPreference,
       ...(settings.player.transitionMode === "automix"

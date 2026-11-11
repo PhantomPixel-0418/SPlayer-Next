@@ -967,6 +967,10 @@
       "label": "预载下一首歌曲",
       "description": "提前缓存并解码下一曲，可能会增加网络占用"
     },
+    "preloadLyric": {
+      "label": "预载下一首歌词",
+      "description": "仅预载歌词，切歌后更快展示歌词"
+    },
     "outputDevice": {
       "label": "输出设备",
       "description": "选择音频输出设备",

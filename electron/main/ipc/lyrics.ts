@@ -10,6 +10,8 @@
  */
 
 import { ipcMain, dialog } from "electron";
+import { access } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 import * as netease from "@main/apis/common/lyric/netease";
 import * as qqmusic from "@main/apis/common/lyric/qqmusic";
 import * as kugou from "@main/apis/common/lyric/kugou";
@@ -17,7 +19,12 @@ import { fetchTTML, searchTTML } from "@main/apis/common/lyric/ttml";
 import { matchLocalTTML } from "@main/services/localLyricRepo";
 import { buildFingerprint, deleteMatchedId, getMatchedId } from "@main/database/lyricMatchCache";
 import { coreLog } from "@main/utils/logger";
-import type { LyricMatchResponse, LyricTTMLResponse } from "@shared/types/lyrics";
+import type {
+  LyricMatchResponse,
+  LyricTTMLResponse,
+  LocalExternalLyric,
+} from "@shared/types/lyrics";
+import type { IpcResponse } from "@shared/types/player";
 import type { Platform } from "@shared/types/platform";
 import type { Track } from "@shared/types/player";
 
@@ -116,6 +123,52 @@ const resolveTTMLOverlay = async (
   }
 };
 
+/** 本地外挂歌词支持的扩展名 */
+const LOCAL_LYRIC_EXTENSIONS: readonly LocalExternalLyric["format"][] = [
+  "ttml",
+  "lys",
+  "qrc",
+  "krc",
+  "yrc",
+  "lrc",
+  "ass",
+  "srt",
+];
+
+/** 仅保留一个在途扫描，避免慢目录占满文件系统工作线程 */
+let localDiscovery: { audioPath: string; promise: Promise<LocalExternalLyric[]> } | null = null;
+
+/**
+ * 异步枚举本地音频同目录下的外挂歌词文件
+ * 同路径复用在途请求，扫描繁忙时其他路径跳过预载并由正常加载兜底
+ * @param audioPath - 本地音频路径
+ * @returns 按扩展名排序的外挂歌词文件列表
+ */
+const findLocalExternalLyrics = (audioPath: string): Promise<LocalExternalLyric[]> => {
+  if (localDiscovery) {
+    return localDiscovery.audioPath === audioPath ? localDiscovery.promise : Promise.resolve([]);
+  }
+  const dir = dirname(audioPath);
+  const stem = basename(audioPath, extname(audioPath));
+  const promise = (async () => {
+    const found: LocalExternalLyric[] = [];
+    for (const ext of LOCAL_LYRIC_EXTENSIONS) {
+      const lyricPath = join(dir, `${stem}.${ext}`);
+      try {
+        await access(lyricPath);
+        found.push({ format: ext, path: lyricPath });
+      } catch {
+        // 与原有存在性检查一致，缺失或不可访问的文件不作为候选
+      }
+    }
+    return found;
+  })().finally(() => {
+    localDiscovery = null;
+  });
+  localDiscovery = { audioPath, promise };
+  return promise;
+};
+
 export const registerLyricsIpc = (): void => {
   ipcMain.handle("lyrics:matchById", (_evt, platform: Platform, id: string, track?: Track) =>
     dedup(`byId:${platform}:${id}`, () => resolveById(platform, id, track)),
@@ -158,4 +211,18 @@ export const registerLyricsIpc = (): void => {
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
+  ipcMain.handle(
+    "lyrics:findLocalExternalLyrics",
+    async (_evt, audioPath: string): Promise<IpcResponse<LocalExternalLyric[]>> => {
+      if (typeof audioPath !== "string" || !audioPath) {
+        return { success: false, error: "invalid audio path" };
+      }
+      try {
+        return { success: true, data: await findLocalExternalLyrics(audioPath) };
+      } catch (err) {
+        coreLog.warn("[lyrics] findLocalExternalLyrics failed:", err);
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 };

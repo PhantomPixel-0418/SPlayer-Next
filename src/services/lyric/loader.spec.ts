@@ -1,20 +1,11 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Track, TrackSource } from "@shared/types/player";
+import type { Track, TrackDetail, TrackSource } from "@shared/types/player";
 import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
 
-// Mock preload
-const preloadedResult = vi.hoisted(() => ({
-  hit: false,
-  lyric: null as unknown,
-}));
-
 vi.mock("@/services/lyric/preload", () => ({
-  consumePreloadedLyric: vi.fn(() => ({
-    hit: preloadedResult.hit,
-    lyric: preloadedResult.lyric,
-  })),
+  consumePreloadedLyric: vi.fn(() => ({ hit: false })),
 }));
 
 // Mock resolve 模块，保留真实 isBetterFormat 与其它纯函数
@@ -37,6 +28,7 @@ vi.mock("@/services/lyric/resolve", async (importOriginal) => {
 });
 
 import { loadForTrack } from "./loader";
+import { consumePreloadedLyric } from "./preload";
 
 const createTrack = (id: string, source: TrackSource = "netease"): Track => ({
   id,
@@ -48,7 +40,7 @@ const createTrack = (id: string, source: TrackSource = "netease"): Track => ({
 
 const mockWindowApi = {
   player: {
-    readLyricFile: vi.fn().mockResolvedValue({ success: false, data: null }),
+    readLyricFile: vi.fn().mockResolvedValue({ success: false, data: null as string | null }),
   },
   desktopLyric: {
     onConfigChange: vi.fn(() => () => {}),
@@ -84,8 +76,8 @@ describe("lyric loader", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
-    preloadedResult.hit = false;
-    preloadedResult.lyric = null;
+    vi.mocked(consumePreloadedLyric).mockReset();
+    vi.mocked(consumePreloadedLyric).mockReturnValue({ hit: false });
 
     mockResolveOnlineByPreference.mockResolvedValue(null);
     mockResolveTTMLOverlay.mockResolvedValue(null);
@@ -95,6 +87,50 @@ describe("lyric loader", () => {
 
     // @ts-expect-error test mock
     window.api = mockWindowApi;
+  });
+
+  it.each([true, false])("本地预载命中时复用首次消费结果（有 detail：%s）", async (hasDetail) => {
+    const media = useMediaStore();
+    const track = createTrack("local_preloaded", "local");
+    media.track = track;
+    const lyric = {
+      source: { source: "external", format: "lrc" },
+      input: { content: "[00:01.00]预载歌词" },
+    } as const;
+    vi.mocked(consumePreloadedLyric)
+      .mockReturnValueOnce({ hit: true, lyric })
+      .mockReturnValueOnce({ hit: false });
+    const detail: TrackDetail = {
+      quality: { sampleRate: 44100, channels: 2, bitsPerSample: 16, bitRate: 0, codec: "flac" },
+      externalLyrics: [{ format: "lrc", path: "/music/song.lrc" }],
+    };
+
+    await loadForTrack(hasDetail ? detail : null);
+
+    expect(consumePreloadedLyric).toHaveBeenCalledTimes(1);
+    expect(mockWindowApi.player.readLyricFile).not.toHaveBeenCalled();
+    expect(mockResolveOnlineByPreference).toHaveBeenCalledWith(
+      track,
+      expect.objectContaining({ local: lyric }),
+    );
+    expect(media.parsedLyric[0].words[0].word).toContain("预载歌词");
+  });
+
+  it("本地预载未命中且有 detail 时读取外挂歌词", async () => {
+    const media = useMediaStore();
+    media.track = createTrack("local_read", "local");
+    mockWindowApi.player.readLyricFile.mockResolvedValueOnce({
+      success: true,
+      data: "[00:01.00]文件歌词",
+    });
+
+    await loadForTrack({
+      quality: { sampleRate: 44100, channels: 2, bitsPerSample: 16, bitRate: 0, codec: "flac" },
+      externalLyrics: [{ format: "lrc", path: "/music/song.lrc" }],
+    });
+
+    expect(mockWindowApi.player.readLyricFile).toHaveBeenCalledExactlyOnceWith("/music/song.lrc");
+    expect(media.parsedLyric[0].words[0].word).toContain("文件歌词");
   });
 
   it("在线多平台并发查询时，先到达的候选歌词立即上屏展示", async () => {
