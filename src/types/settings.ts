@@ -7,9 +7,6 @@ import type { TransitionMode } from "@shared/types/automix";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import type { CjkTransformMode } from "@shared/types/opencc";
 import type { PronunciationOptimization } from "@shared/types/lyricEnhancement";
-
-/** 自动发音的对齐方式 */
-export type PronunciationAlignment = "auto" | "word" | "line";
 import type { QualityLevel } from "@/utils/quality";
 import type { LyricAlignment } from "lyric-dom";
 import type { PaletteAlgorithm } from "@applemusic-like-lyrics/core";
@@ -148,8 +145,6 @@ export interface LyricSettings {
   llmTranslation: boolean;
   /** 发音优化方式 */
   pronunciationOptimization: PronunciationOptimization;
-  /** 自动发音的对齐方式：auto 按歌词统一、word 尽量逐字、line 全部逐行 */
-  pronunciationAlignment: PronunciationAlignment;
   /** 歌词来源偏好 */
   lyricSourcePreference: LyricSourcePreference;
   /** 音源顺序 */

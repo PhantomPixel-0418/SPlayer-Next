@@ -17,7 +17,7 @@ export interface EnhancedLyricLine extends LyricLine {
 export interface LyricEnhancementRequest {
   versionKey: string;
   locale: string;
-  lines: LyricLine[];
+  lines: EnhancedLyricLine[];
   translate: boolean;
   pronunciation: PronunciationOptimization;
 }

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { writeFileSync as atomicWriteSync } from "atomically";
 import type {
+  EnhancedLyricLine,
   LyricEnhancementRequest,
   LyricEnhancementResult,
 } from "@shared/types/lyricEnhancement";
@@ -94,7 +95,7 @@ const validRequest = (request: LyricEnhancementRequest): boolean => {
 export const createLyricEnhancementService = (options: {
   cacheDir: string;
   getActiveAiModel: () => Promise<Model | null>;
-  optimizeWithJapaneseDictionary: (lines: LyricLine[]) => Promise<LyricLine[]>;
+  optimizeWithJapaneseDictionary: (lines: LyricLine[]) => Promise<EnhancedLyricLine[]>;
   fetch: typeof fetch;
 }) => {
   const { cacheDir, getActiveAiModel, optimizeWithJapaneseDictionary } = options;
@@ -301,13 +302,11 @@ export const createLyricEnhancementService = (options: {
   ): Promise<LyricEnhancementResult> => {
     if (!validRequest(request))
       return {
-        lines: Array.isArray(request?.lines) ? request.lines.slice(0, 1000) : [],
+        lines: Array.isArray(request?.lines) ? request.lines : [],
         warnings: ["歌词增强请求无效或内容过长"],
       };
-    let lines: LyricLine[] = request.lines.slice();
+    let lines: EnhancedLyricLine[] = request.lines.slice();
     const warnings: string[] = [];
-    if (request.lines.length > 1000 || request.lines.some((line) => line.words.length > 500))
-      return { lines, warnings: ["歌词内容过长，无法增强"] };
     if (request.pronunciation === "dictionary") {
       try {
         lines = await optimizeWithJapaneseDictionary(lines);

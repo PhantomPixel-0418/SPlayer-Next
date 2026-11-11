@@ -267,7 +267,7 @@ const lyricCategory: SettingCategory = {
         {
           key: "pronunciationAlignment",
           type: "select",
-          binding: { store: "settings", path: "lyric.pronunciationAlignment" },
+          binding: { store: "settings", path: "system.lyric.pronunciationAlignment" },
           options: [
             { value: "auto", labelKey: "settings.pronunciationAlignment.auto" },
             { value: "word", labelKey: "settings.pronunciationAlignment.word" },

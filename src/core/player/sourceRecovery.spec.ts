@@ -21,7 +21,11 @@ vi.mock("@/stores/settings", () => ({
   useSettingsStore: () => ({
     preset: { skipKeywordsSongs: false, skipTrackKeywords: [] },
     player: { songLevel: "hq", allowTrialPlay: false },
-    system: { cache: { songCache: { enabled: false } }, player: { rememberLastTrack: true } },
+    system: {
+      cache: { songCache: { enabled: false } },
+      player: { rememberLastTrack: true },
+      lyric: { pronunciationAlignment: "auto" },
+    },
     lyric: { cjkTransform: "none" },
   }),
 }));

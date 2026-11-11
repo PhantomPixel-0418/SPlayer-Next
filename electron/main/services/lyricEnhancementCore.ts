@@ -1,4 +1,5 @@
 import type { LyricLine } from "@shared/types/lyrics";
+import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 
 type Task = "translation" | "pronunciation";
 export interface EnhancementPatch {
@@ -119,11 +120,11 @@ export const validateEnhancementPatch = (
  * @returns 应用补丁后的歌词
  */
 export const applyEnhancementPatch = (
-  lines: LyricLine[],
+  lines: EnhancedLyricLine[],
   patch: EnhancementPatch[],
   task: Task,
   locale: string,
-): LyricLine[] => {
+): EnhancedLyricLine[] => {
   const output = lines.slice();
   for (const row of patch) {
     const line = output[row.id];

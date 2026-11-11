@@ -159,6 +159,7 @@ export const useMediaStore = defineStore("media", () => {
       useSettingsStore().lyric.autoGenerateWordByWord,
       useSettingsStore().lyric.llmTranslation,
       useSettingsStore().lyric.pronunciationOptimization,
+      useSettingsStore().system.lyric.pronunciationAlignment,
       useSettingsStore().locale,
     ],
     () => {

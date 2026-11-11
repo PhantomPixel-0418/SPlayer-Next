@@ -1,6 +1,7 @@
 import { toKatakana, toRomaji } from "wanakana";
 import type { IpadicFeatures } from "kuromoji";
 import type { LyricLine } from "@shared/types/lyrics";
+import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 
 type DictionaryToken = Pick<IpadicFeatures, "surface_form" | "reading"> &
   Partial<Pick<IpadicFeatures, "pos" | "pos_detail_1" | "conjugated_form">>;
@@ -80,14 +81,11 @@ export function optimizeJapaneseLine(
   tokenizer: {
     tokenize: (text: string) => DictionaryToken[];
   },
-): LyricLine {
+): EnhancedLyricLine {
   const text = line.words.map((word) => word.word).join("");
   if (
     line.language !== "ja" &&
-    (line.language === "ko" ||
-      line.language === "zh-CN" ||
-      line.language === "yue" ||
-      !/[\u3040-\u30ff]/u.test(text))
+    (line.language === "ko" || line.language === "zh-CN" || !/[\u3040-\u30ff]/u.test(text))
   )
     return line;
   const tokens = tokenizer.tokenize(text);
@@ -114,9 +112,9 @@ export function optimizeJapaneseLine(
     previousWhole = token;
   }
   if (text.slice(wholeCursor).trim()) validWholeLine = false;
-  const fallback: LyricLine =
+  const fallback: EnhancedLyricLine =
     validWholeLine && wholeLine
-      ? {
+      ? ({
           ...line,
           words: line.words.map((word) => {
             const copy = { ...word };
@@ -125,8 +123,8 @@ export function optimizeJapaneseLine(
           }),
           romanLyric: wholeLine,
           generatedPronunciation: { method: "dictionary", alignment: "line" },
-        }
-      : line;
+        } as EnhancedLyricLine)
+      : (line as EnhancedLyricLine);
   const output = line.words.map(() => "");
   const ranges: { start: number; end: number }[] = [];
   let offset = 0;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Artist } from "@shared/types/player";
+import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
@@ -116,20 +117,17 @@ const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO
 
 /** 当前展示内容的自动生成来源 */
 const generatedLyricLabels = computed(() => {
+  const lines = media.parsedLyric as EnhancedLyricLine[];
   const labels: string[] = [];
-  if (media.parsedLyric.some((line) => line.generatedTranslation))
+  if (lines.some((line) => line.generatedTranslation))
     labels.push(t("settings.lyricEnhancement.generatedTranslation"));
-  if (media.parsedLyric.some((line) => line.generatedPronunciation?.method === "llm"))
+  if (lines.some((line) => line.generatedPronunciation?.method === "llm"))
     labels.push(t("settings.lyricEnhancement.generatedPronunciation"));
-  if (media.parsedLyric.some((line) => line.generatedPronunciation?.method === "dictionary"))
+  if (lines.some((line) => line.generatedPronunciation?.method === "dictionary"))
     labels.push(t("settings.lyricEnhancement.dictionaryPronunciation"));
   // 仅当逐字与逐行混排时才提示逐行回退；整份歌词统一为逐行时不再提示
-  const hasWordAlignment = media.parsedLyric.some(
-    (line) => line.generatedPronunciation?.alignment === "word",
-  );
-  const hasLineAlignment = media.parsedLyric.some(
-    (line) => line.generatedPronunciation?.alignment === "line",
-  );
+  const hasWordAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "word");
+  const hasLineAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "line");
   if (hasWordAlignment && hasLineAlignment)
     labels.push(t("settings.lyricEnhancement.lineFallback"));
   return labels;

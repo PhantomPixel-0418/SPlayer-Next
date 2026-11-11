@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { LyricLine } from "@shared/types/lyrics";
+import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 import { store as configStore } from "@main/store";
 import { defaultCacheDir } from "@main/utils/paths";
 import { optimizeJapaneseLine } from "./lyricDictionaryCore";
@@ -48,17 +49,16 @@ export async function removeLyricDictionary() {
  * @param lines - 原始歌词行
  * @returns 优化后的歌词行
  */
-export async function optimizeWithJapaneseDictionary(lines: LyricLine[]): Promise<LyricLine[]> {
+export async function optimizeWithJapaneseDictionary(
+  lines: LyricLine[],
+): Promise<EnhancedLyricLine[]> {
   const indexes: number[] = [];
   const texts: string[] = [];
   lines.forEach((line, index) => {
     const text = line.words.map((word) => word.word).join("");
     if (
       line.language === "ja" ||
-      (line.language !== "ko" &&
-        line.language !== "zh-CN" &&
-        line.language !== "yue" &&
-        /[\u3040-\u30ff]/u.test(text))
+      (line.language !== "ko" && line.language !== "zh-CN" && /[\u3040-\u30ff]/u.test(text))
     ) {
       indexes.push(index);
       texts.push(text);
@@ -68,14 +68,16 @@ export async function optimizeWithJapaneseDictionary(lines: LyricLine[]): Promis
   if (removing || !(await store.getLyricDictionaryStatus()).installed || removing)
     throw new Error("日语离线词典尚未安装");
   const results = await worker.tokenize(texts);
-  const output = lines.slice();
+  const output: EnhancedLyricLine[] = lines.slice() as EnhancedLyricLine[];
   indexes.forEach((index, position) => {
     output[index] = optimizeJapaneseLine(lines[index], { tokenize: () => results[position] });
   });
   // 同一份歌词里逐字与逐行混排会让观感割裂：只要出现逐行回退，就整体统一为逐行
   const generated = indexes
     .map((index) => output[index])
-    .filter((line) => line.generatedPronunciation?.method === "dictionary");
+    .filter(
+      (line): line is EnhancedLyricLine => line.generatedPronunciation?.method === "dictionary",
+    );
   const hasWord = generated.some((line) => line.generatedPronunciation?.alignment === "word");
   const hasLine = generated.some((line) => line.generatedPronunciation?.alignment === "line");
   const alignment = configStore.get("lyric.pronunciationAlignment") ?? "auto";
