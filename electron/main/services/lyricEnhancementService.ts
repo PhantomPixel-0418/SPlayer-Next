@@ -30,7 +30,8 @@ type Task = "translation" | "pronunciation";
  * @returns 规范化后的请求地址
  */
 const secureModelUrl = (baseUrl: string, path: string): string => {
-  const url = new URL(`${baseUrl.replace(/\/+$/, "")}${path}`);
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
   const loopback =
     url.hostname === "localhost" ||
     url.hostname === "127.0.0.1" ||
