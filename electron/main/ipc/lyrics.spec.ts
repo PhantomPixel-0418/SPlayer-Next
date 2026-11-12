@@ -10,6 +10,7 @@ vi.mock("@main/apis/common/lyric/kugou", () => ({}));
 vi.mock("@main/apis/common/lyric/ttml", () => ({}));
 vi.mock("@main/services/localLyricRepo", () => ({}));
 vi.mock("@main/database/lyricMatchCache", () => ({}));
+vi.mock("@main/database/lyricManualMatch", () => ({}));
 vi.mock("@main/utils/logger", () => ({ coreLog: { warn: vi.fn() } }));
 
 import { registerLyricsIpc } from "./lyrics";
