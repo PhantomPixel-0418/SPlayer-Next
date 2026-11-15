@@ -192,7 +192,8 @@ export const useSettingsStore = defineStore(
     /** 歌词 */
     const lyric = reactive<LyricSettings>({
       llmTranslation: false,
-      pronunciationOptimization: "off",
+      pronunciationOptimization: false,
+      llmRuby: false,
       lyricSourcePreference: "auto",
       lyricSourceOrder: [...DEFAULT_LYRIC_SOURCE_ORDER],
       lyricFormatOrder: [...DEFAULT_LYRIC_FORMAT_ORDER],
@@ -402,8 +403,11 @@ export const useSettingsStore = defineStore(
         lyric.lyricSourceOrder = reconcileOrder(lyric.lyricSourceOrder, ALL_PLATFORMS);
         // 增强相关设置缺失时补默认，避免旧数据把开关带到非法值
         if (typeof lyric.llmTranslation !== "boolean") lyric.llmTranslation = false;
-        if (!(["off", "llm", "dictionary"] as const).includes(lyric.pronunciationOptimization)) {
-          lyric.pronunciationOptimization = "off";
+        if (typeof lyric.llmRuby !== "boolean") lyric.llmRuby = false;
+        // 旧版发音优化为 off/llm/dictionary 三态，转为开关并保留已开启的选择
+        const legacyPronunciation = lyric.pronunciationOptimization as unknown;
+        if (typeof legacyPronunciation !== "boolean") {
+          lyric.pronunciationOptimization = legacyPronunciation === "llm";
         }
         lyric.lyricFormatOrder = reconcileOrder(lyric.lyricFormatOrder, DEFAULT_LYRIC_FORMAT_ORDER);
         appearance.sidebarNavGroups = reconcileNavGroups(appearance.sidebarNavGroups ?? []);

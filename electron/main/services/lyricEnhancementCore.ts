@@ -1,11 +1,12 @@
 import type { LyricLine } from "@shared/types/lyrics";
 import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 
-type Task = "translation" | "pronunciation";
+type Task = "translation" | "pronunciation" | "ruby";
 export interface EnhancementPatch {
   id: number;
   translation?: string | null;
   romanWords?: string[] | null;
+  ruby?: Record<string, string> | null;
 }
 
 /**
@@ -93,6 +94,28 @@ export const validateEnhancementPatch = (
         throw new Error("invalid translation");
       return { id: id as number, translation: row.translation as string | null };
     }
+    if (task === "ruby") {
+      const readings = row.ruby;
+      if (readings !== null) {
+        if (!readings || typeof readings !== "object" || Array.isArray(readings))
+          throw new Error("invalid ruby");
+        const entries = Object.entries(readings as Record<string, unknown>);
+        if (!entries.length) throw new Error("invalid ruby");
+        for (const [key, value] of entries) {
+          const index = Number(key);
+          if (
+            !/^\d+$/.test(key) ||
+            !Number.isInteger(index) ||
+            index >= lines[id as number].words.length ||
+            typeof value !== "string" ||
+            !value.trim() ||
+            value.length > 64
+          )
+            throw new Error("invalid ruby");
+        }
+      }
+      return { id: id as number, ruby: readings as Record<string, string> | null };
+    }
     const words = row.romanWords;
     if (
       words !== null &&
@@ -141,6 +164,21 @@ export const applyEnhancementPatch = (
         romanLyric: row.romanWords.join(""),
         preserveRomanizationSpacing: true,
         generatedPronunciation: { method: "llm" },
+      };
+    } else if (task === "ruby" && row.ruby) {
+      const readings = row.ruby;
+      output[row.id] = {
+        ...line,
+        words: line.words.map((word, index) => {
+          const reading = readings[String(index)]?.trim();
+          return reading && !word.ruby?.length
+            ? {
+                ...word,
+                ruby: [{ word: reading, startTime: word.startTime, endTime: word.endTime }],
+              }
+            : word;
+        }),
+        generatedRuby: { method: "llm" },
       };
     }
   }

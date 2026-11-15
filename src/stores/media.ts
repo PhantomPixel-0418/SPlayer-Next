@@ -159,7 +159,7 @@ export const useMediaStore = defineStore("media", () => {
       useSettingsStore().lyric.autoGenerateWordByWord,
       useSettingsStore().lyric.llmTranslation,
       useSettingsStore().lyric.pronunciationOptimization,
-      useSettingsStore().system.lyric.pronunciationAlignment,
+      useSettingsStore().lyric.llmRuby,
       useSettingsStore().locale,
     ],
     () => {
@@ -257,16 +257,28 @@ export const useMediaStore = defineStore("media", () => {
       settings.locale,
       settings.lyric.llmTranslation,
       settings.lyric.pronunciationOptimization,
+      settings.lyric.llmRuby,
     );
+    if (import.meta.env.DEV) {
+      console.info(
+        "[lyric-enhancement] 请求",
+        enhancementRequest
+          ? `format=${source?.format} lines=${enhancementRequest.lines.length} translate=${enhancementRequest.translate} pronunciation=${enhancementRequest.pronunciation} ruby=${enhancementRequest.ruby}`
+          : "未创建（增强开关均关闭，或歌词不可增强）",
+      );
+    }
     const enhancement = enhancementRequest
-      ? window.api.lyricEnhancement.enhance(enhancementRequest).catch(() => ({
-          lines: nextLines,
-          warnings: [
-            settings.locale.startsWith("zh")
-              ? "歌词增强失败，请检查模型和词典配置"
-              : "Lyric enhancement failed; check model and dictionary settings",
-          ],
-        }))
+      ? window.api.lyricEnhancement.enhance(enhancementRequest).catch((error) => {
+          if (import.meta.env.DEV) console.warn("[lyric-enhancement] IPC 调用失败", error);
+          return {
+            lines: nextLines,
+            warnings: [
+              settings.locale.startsWith("zh")
+                ? "歌词增强失败，请检查模型配置"
+                : "Lyric enhancement failed; check model settings",
+            ],
+          };
+        })
       : null;
     lyricEnhancementPending.value = enhancement !== null;
     if (needsCjkTransform || enhancement) {
@@ -281,6 +293,9 @@ export const useMediaStore = defineStore("media", () => {
           if (!enhancement) return;
           const result = await enhancement;
           if (currentTransformToken !== transformToken) return;
+          if (import.meta.env.DEV && result.warnings.length) {
+            console.warn("[lyric-enhancement] 警告", result.warnings);
+          }
           const enhanced = needsCjkTransform
             ? await applyLyricCjkTransform(result.lines, cjkMode)
             : result.lines;

@@ -99,7 +99,6 @@ export const defaultSystemConfig: SystemConfig = {
   lyric: {
     enableOnlineTTMLLyric: false,
     amllDbServer: "",
-    pronunciationAlignment: "auto",
   },
   localLyric: {
     enableLocalTTMLOverride: false,

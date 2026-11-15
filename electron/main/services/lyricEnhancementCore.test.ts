@@ -36,6 +36,12 @@ test("严格校验行覆盖和发音片段数量", () => {
   assert.throws(() =>
     validateEnhancementPatch([{ id: 0, translation: "" }], lines, [0], "translation"),
   );
+  assert.throws(() => validateEnhancementPatch([{ id: 0, ruby: ["きみ"] }], lines, [0], "ruby"));
+  assert.throws(() => validateEnhancementPatch([{ id: 0, ruby: {} }], lines, [0], "ruby"));
+  assert.throws(() =>
+    validateEnhancementPatch([{ id: 0, ruby: { "2": "きみ" } }], lines, [0], "ruby"),
+  );
+  assert.throws(() => validateEnhancementPatch([{ id: 0, ruby: { "0": "" } }], lines, [0], "ruby"));
 });
 
 test("补丁保留原始歌词和时间，写入生成标记", () => {
@@ -51,6 +57,26 @@ test("补丁保留原始歌词和时间，写入生成标记", () => {
   assert.equal(updated[0].romanLyric, "kimi wa");
   assert.equal(updated[0].generatedPronunciation?.method, "llm");
   assert.equal(lines[0].words[0].romanWord, undefined);
+});
+
+test("注音补丁写入假名并保留已有注音", () => {
+  const annotated = lines.map((line) => ({
+    ...line,
+    words: line.words.map((word, index) =>
+      index === 0 ? { ...word, ruby: [{ word: "きみ", startTime: 0, endTime: 1 }] } : word,
+    ),
+  }));
+  const patch = validateEnhancementPatch(
+    [{ id: 0, ruby: { "0": "きみ", "1": "わ" } }],
+    annotated,
+    [0],
+    "ruby",
+  );
+  const updated = applyEnhancementPatch(annotated, patch, "ruby", "zh-CN");
+  assert.deepEqual(updated[0].words[0].ruby, [{ word: "きみ", startTime: 0, endTime: 1 }]);
+  assert.deepEqual(updated[0].words[1].ruby, [{ word: "わ", startTime: 1, endTime: 2 }]);
+  assert.equal(updated[0].generatedRuby?.method, "llm");
+  assert.equal(lines[0].words[0].ruby, undefined);
 });
 
 test("识别明确的界面语言，避免覆盖已有翻译", () => {

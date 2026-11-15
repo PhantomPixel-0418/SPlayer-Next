@@ -39,7 +39,6 @@ const config: Configuration = {
   compression: "maximum",
   generateUpdatesFilesForAllChannels: true,
   files: [
-    "!**/node_modules/kuromoji/dict/**",
     "public/**",
     "out/main/**",
     "out/preload/**",

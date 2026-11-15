@@ -126,25 +126,26 @@ const showLosslessIcon = computed(() => {
   return level === "hi-res" || level === "lossless";
 });
 
-/** 歌词格式标签 */
-const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO-LRC");
-
-/** 当前展示内容的自动生成来源 */
-const generatedLyricLabels = computed(() => {
+/** 当前歌词是否使用 LLM 增强 */
+const hasLlmEnhancement = computed(() => {
   const lines = media.parsedLyric as EnhancedLyricLine[];
-  const labels: string[] = [];
-  if (lines.some((line) => line.generatedTranslation))
-    labels.push(t("settings.lyricEnhancement.generatedTranslation"));
-  if (lines.some((line) => line.generatedPronunciation?.method === "llm"))
-    labels.push(t("settings.lyricEnhancement.generatedPronunciation"));
-  if (lines.some((line) => line.generatedPronunciation?.method === "dictionary"))
-    labels.push(t("settings.lyricEnhancement.dictionaryPronunciation"));
-  // 仅当逐字与逐行混排时才提示逐行回退；整份歌词统一为逐行时不再提示
-  const hasWordAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "word");
-  const hasLineAlignment = lines.some((line) => line.generatedPronunciation?.alignment === "line");
-  if (hasWordAlignment && hasLineAlignment)
-    labels.push(t("settings.lyricEnhancement.lineFallback"));
-  return labels;
+  const pending = media.lyricEnhancementPending;
+  return (
+    lines.some(
+      (line) => line.generatedTranslation || line.generatedPronunciation || line.generatedRuby,
+    ) ||
+    (pending &&
+      (settings.lyric.llmTranslation ||
+        settings.lyric.pronunciationOptimization ||
+        settings.lyric.llmRuby))
+  );
+});
+
+/** 歌词格式标签，附加增强方式与处理中状态 */
+const lyricLabel = computed(() => {
+  const format = media.activeLyric?.format.toUpperCase() ?? "NO-LRC";
+  if (!hasLlmEnhancement.value) return format;
+  return `${format} · ${t("settings.lyricEnhancement.badgeLlm")}${media.lyricEnhancementPending ? "…" : ""}`;
 });
 
 /** 专辑文本 */
@@ -199,7 +200,7 @@ const alignItems = computed(() => {
       {{ displayTrack.comment }}
     </div>
     <!-- 元信息标签行 -->
-    <div class="flex items-center gap-1.5 text-[1em] my-1 text-cover/60">
+    <div class="flex flex-wrap items-center gap-1.5 text-[1em] my-1 text-cover/60">
       <span
         class="inline-flex items-center justify-center leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30"
       >
@@ -220,7 +221,7 @@ const alignItems = computed(() => {
         cover
       >
         <span
-          class="inline-flex items-center justify-center leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30"
+          class="inline-flex items-center justify-center whitespace-nowrap leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30"
         >
           {{ lyricLabel }}
         </span>
@@ -235,7 +236,7 @@ const alignItems = computed(() => {
       >
         <template #trigger>
           <span
-            class="inline-flex items-center justify-center leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30 cursor-pointer transition-colors hover:border-cover/60"
+            class="inline-flex items-center justify-center whitespace-nowrap leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30 cursor-pointer transition-colors hover:border-cover/60"
           >
             {{ lyricLabel }}
           </span>
@@ -274,29 +275,11 @@ const alignItems = computed(() => {
       </span>
     </div>
     <div
-      v-if="
-        !simple &&
-        (generatedLyricLabels.length ||
-          media.lyricEnhancementPending ||
-          media.lyricEnhancementWarnings.length)
-      "
+      v-if="!simple && media.lyricEnhancementWarnings.length"
       class="flex max-w-full flex-wrap items-center gap-1.5 text-xs text-cover/70"
       aria-live="polite"
     >
-      <span
-        v-for="label in generatedLyricLabels"
-        :key="label"
-        class="rounded border border-solid border-cover/25 px-1.5 py-0.5"
-      >
-        {{ label }}
-      </span>
-      <span v-if="media.lyricEnhancementPending">
-        {{ t("settings.lyricEnhancement.processing") }}
-      </span>
-      <span
-        v-if="media.lyricEnhancementWarnings.length"
-        :title="media.lyricEnhancementWarnings.join(' · ')"
-      >
+      <span :title="media.lyricEnhancementWarnings.join(' · ')">
         {{ t("settings.lyricEnhancement.failed") }}
       </span>
     </div>
