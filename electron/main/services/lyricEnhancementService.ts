@@ -8,6 +8,7 @@ import type {
   LyricEnhancementRequest,
   LyricEnhancementResult,
 } from "@shared/types/lyricEnhancement";
+import { selectPronunciationAndRubyIds } from "../../../shared/utils/lyricEnhancement";
 import {
   applyEnhancementPatch,
   matchesLocale,
@@ -387,29 +388,11 @@ Requirements:
             : [];
         })
       : [];
-    const pronunciationIds = request.pronunciation
-      ? request.lines.flatMap((line, id) => {
-          const text = line.words.map((word) => word.word).join("");
-          if (!/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(text)) return [];
-          // 已有完整音译（逐行或逐字）的行不再生成
-          if (line.generatedPronunciation || line.romanLyric.trim()) return [];
-          if (request.pronunciationGranularity === "word") {
-            const meaningful = line.words.filter((word) =>
-              /[\p{Letter}\p{Number}]/u.test(word.word),
-            );
-            if (meaningful.length && meaningful.every((word) => word.romanWord?.trim())) return [];
-          }
-          return [id];
-        })
-      : [];
-    const rubyIds = request.ruby
-      ? request.lines.flatMap((line, id) => {
-          if (line.language !== "ja" || line.generatedRuby) return [];
-          const text = line.words.map((word) => word.word).join("");
-          if (!/[\u3400-\u9fff\uf900-\ufaff]/u.test(text)) return [];
-          return line.words.some((word) => !word.ruby?.length) ? [id] : [];
-        })
-      : [];
+    const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(
+      lines,
+      request.pronunciation,
+      request.ruby,
+    );
     if (!translationIds.length && !pronunciationIds.length && !rubyIds.length) {
       if (request.lines.length) {
         log?.debug("歌词无需增强：无可补的翻译/发音/注音行", {

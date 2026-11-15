@@ -2,7 +2,10 @@ import type { Track } from "@shared/types/player";
 import { useSettingsStore } from "@/stores/settings";
 import { useStreamingStore } from "@/stores/streaming";
 import { usePluginsStore } from "@/stores/plugins";
-import { resolveLyricForPreload, type ResolvedLyric } from "./resolve";
+import type { ResolvedLyric } from "./resolve";
+import { resolveLyricForPreload } from "./resolve";
+import { buildLyricEnhancementRequest } from "./enhancement";
+import { parseLyricForDisplay } from "./displayParse";
 
 type PreloadedLyricResult = { hit: false } | { hit: true; lyric: ResolvedLyric };
 
@@ -29,12 +32,23 @@ const buildTrackKey = (track: Track): string =>
     track.artists.map((artist) => artist.name),
   ]);
 
-/** 生成影响歌词解析结果的上下文键 */
+/** 生成影响展示解析与增强请求的上下文键 */
 const buildContextKey = (): string => {
   const settings = useSettingsStore();
   const streaming = useStreamingStore();
   const plugins = usePluginsStore();
   return JSON.stringify([
+    settings.locale,
+    settings.lyric.detectBackgroundLyrics,
+    settings.lyric.autoGenerateWordByWord,
+    settings.lyric.cjkTransform,
+    settings.lyric.enableExcludeLyrics,
+    settings.lyric.excludeLyricsUserKeywords,
+    settings.lyric.excludeLyricsUserRegexes,
+    settings.lyric.llmTranslation,
+    settings.lyric.pronunciationOptimization,
+    settings.lyric.pronunciationGranularity,
+    settings.lyric.llmRuby,
     settings.lyric.lyricSourcePreference,
     settings.lyric.lyricSourceOrder,
     settings.lyric.lyricFormatOrder,
@@ -60,6 +74,39 @@ export const invalidatePreloadedLyric = (): void => {
 };
 
 /**
+ * 预先向主进程发起歌词增强，让上一曲播放期间完成模型请求或命中去重中的请求
+ * 预热与切歌提交共用解析管线和请求构造，保证主进程缓存键一致
+ * @param track - 候选歌曲
+ * @param lyric - 预载完成的歌词
+ */
+const preheatLyricEnhancement = (track: Track, lyric: ResolvedLyric): void => {
+  const settings = useSettingsStore();
+  const { llmTranslation, pronunciationOptimization, llmRuby } = settings.lyric;
+  if (!llmTranslation && !pronunciationOptimization && !llmRuby) return;
+  let request: ReturnType<typeof buildLyricEnhancementRequest>;
+  try {
+    const lines = parseLyricForDisplay({ source: lyric.source, input: lyric.input, track }).lines;
+    request = buildLyricEnhancementRequest(
+      lines,
+      lyric.source,
+      track,
+      settings.locale,
+      llmTranslation,
+      pronunciationOptimization,
+      settings.lyric.pronunciationGranularity,
+      llmRuby,
+    );
+  } catch (err) {
+    console.warn("[lyricPreload] 歌词增强预热解析失败:", err);
+    return;
+  }
+  if (!request) return;
+  window.api.lyricEnhancement
+    .enhance(request)
+    .catch((err) => console.warn("[lyricPreload] 歌词增强预热失败:", err));
+};
+
+/**
  * 预载候选歌曲的最终歌词结果
  * 本地歌曲同步枚举同目录外挂歌词并按格式优先级选定，在线/流媒体走网络解析
  * @param track - 候选歌曲
@@ -74,7 +121,9 @@ export const preloadLyricForTrack = (track: Track): void => {
   preloaded = entry;
   resolveLyricForPreload(track, () => !controller.cancelled)
     .then((lyric) => {
+      if (controller.cancelled) return;
       entry.lyric = lyric;
+      if (lyric) preheatLyricEnhancement(track, lyric);
     })
     .catch((err) => {
       console.warn("[lyricPreload] 歌词预载失败:", err);

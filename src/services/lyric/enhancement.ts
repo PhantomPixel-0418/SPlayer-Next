@@ -4,6 +4,7 @@ import type {
   LyricEnhancementRequest,
   PronunciationGranularity,
 } from "@shared/types/lyricEnhancement";
+import { selectPronunciationAndRubyIds } from "@shared/utils/lyricEnhancement";
 
 /**
  * 创建只针对当前歌曲及歌词版本的展示增强请求
@@ -30,7 +31,8 @@ export const buildLyricEnhancementRequest = (
   if (!source || !lines.length) return null;
   // TTML 歌词自带官方译文，跳过机器翻译，仅保留发音增强
   const shouldTranslate = translate === true && source.format !== "ttml";
-  if (!shouldTranslate && !pronunciation && !ruby) return null;
+  const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(lines, pronunciation, ruby);
+  if (!shouldTranslate && !pronunciationIds.length && !rubyIds.length) return null;
   return {
     versionKey: JSON.stringify([
       track?.source,
@@ -44,8 +46,8 @@ export const buildLyricEnhancementRequest = (
     locale,
     lines,
     translate: shouldTranslate,
-    pronunciation,
+    pronunciation: pronunciationIds.length > 0,
     pronunciationGranularity,
-    ruby,
+    ruby: rubyIds.length > 0,
   };
 };

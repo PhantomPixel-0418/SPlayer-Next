@@ -175,6 +175,37 @@ test("已有完整音译的日文行不再发音增强", async (t) => {
   assert.equal(result.lines[0].romanLyric, "kimi wa");
 });
 
+test("已有逐字音译时逐行粒度也不再生成整行音译", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, romanLyric: "kimi wa" }]);
+    },
+  });
+  const request = input();
+  request.translate = false;
+  request.pronunciation = true;
+  request.pronunciationGranularity = "line";
+  request.lines[0].words = [
+    { word: "君", startTime: 0, endTime: 1, romanWord: "kimi" },
+    { word: "は", startTime: 1, endTime: 2, romanWord: " wa" },
+  ];
+  const result = await service.enhanceLyrics(request);
+  assert.equal(calls, 0);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.lines[0].romanLyric, "");
+});
+
 test("逐行发音增强只写整行音译", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -272,6 +303,76 @@ test("发音增强跳过逻辑的边界", async (t) => {
     }),
     { calls: 0, warnings: [] },
   );
+});
+
+test("已有汉字注音时不再调用注音模型", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, ruby: { "0": "きみ" } }]);
+    },
+  });
+  const request = input();
+  request.translate = false;
+  request.ruby = true;
+  request.lines[0].words = [
+    {
+      word: "君",
+      startTime: 0,
+      endTime: 1,
+      ruby: [{ word: "きみ", startTime: 0, endTime: 1 }],
+    },
+    { word: "は", startTime: 1, endTime: 2 },
+  ];
+  const result = await service.enhanceLyrics(request);
+  assert.equal(calls, 0);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.lines[0].generatedRuby, undefined);
+});
+
+test("汉字词缺少有效注音时仍调用注音模型", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, ruby: { "0": "きみ" } }]);
+    },
+  });
+  const request = input();
+  request.translate = false;
+  request.ruby = true;
+  request.lines[0].words = [
+    {
+      word: "君",
+      startTime: 0,
+      endTime: 1,
+      ruby: [{ word: " ", startTime: 0, endTime: 1 }],
+    },
+    { word: "は", startTime: 1, endTime: 2 },
+  ];
+  const result = await service.enhanceLyrics(request);
+  assert.equal(calls, 1);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.lines[0].generatedRuby?.method, "llm");
 });
 
 test("并发请求合并，清理后旧请求不写回缓存", async (t) => {
