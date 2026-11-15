@@ -44,6 +44,32 @@ test("严格校验行覆盖和发音片段数量", () => {
   assert.throws(() => validateEnhancementPatch([{ id: 0, ruby: { "0": "" } }], lines, [0], "ruby"));
 });
 
+test("逐行发音粒度校验整行音译", () => {
+  assert.throws(() =>
+    validateEnhancementPatch([{ id: 0, romanLyric: "" }], lines, [0], "pronunciation", "line"),
+  );
+  assert.throws(() =>
+    validateEnhancementPatch(
+      [{ id: 0, romanLyric: "x".repeat(2001) }],
+      lines,
+      [0],
+      "pronunciation",
+      "line",
+    ),
+  );
+  const patch = validateEnhancementPatch(
+    [{ id: 0, romanLyric: "kimi wa" }],
+    lines,
+    [0],
+    "pronunciation",
+    "line",
+  );
+  const updated = applyEnhancementPatch(lines, patch, "pronunciation", "zh-CN");
+  assert.equal(updated[0].romanLyric, "kimi wa");
+  assert.equal(updated[0].words[0].romanWord, undefined);
+  assert.equal(updated[0].generatedPronunciation?.method, "llm");
+});
+
 test("补丁保留原始歌词和时间，写入生成标记", () => {
   const patch = validateEnhancementPatch(
     [{ id: 0, romanWords: ["kimi ", "wa"] }],
@@ -57,6 +83,19 @@ test("补丁保留原始歌词和时间，写入生成标记", () => {
   assert.equal(updated[0].romanLyric, "kimi wa");
   assert.equal(updated[0].generatedPronunciation?.method, "llm");
   assert.equal(lines[0].words[0].romanWord, undefined);
+});
+
+test("零填充注音键按整数索引归一化，不丢数据", () => {
+  const patch = validateEnhancementPatch(
+    [{ id: 0, ruby: { "00": "きみ", "01": "わ" } }],
+    lines,
+    [0],
+    "ruby",
+  );
+  const updated = applyEnhancementPatch(lines, patch, "ruby", "zh-CN");
+  assert.deepEqual(updated[0].words[0].ruby, [{ word: "きみ", startTime: 0, endTime: 1 }]);
+  assert.deepEqual(updated[0].words[1].ruby, [{ word: "わ", startTime: 1, endTime: 2 }]);
+  assert.equal(updated[0].generatedRuby?.method, "llm");
 });
 
 test("注音补丁写入假名并保留已有注音", () => {

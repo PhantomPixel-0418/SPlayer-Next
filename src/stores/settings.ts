@@ -193,6 +193,7 @@ export const useSettingsStore = defineStore(
     const lyric = reactive<LyricSettings>({
       llmTranslation: false,
       pronunciationOptimization: false,
+      pronunciationGranularity: "word",
       llmRuby: false,
       lyricSourcePreference: "auto",
       lyricSourceOrder: [...DEFAULT_LYRIC_SOURCE_ORDER],
@@ -403,6 +404,12 @@ export const useSettingsStore = defineStore(
         lyric.lyricSourceOrder = reconcileOrder(lyric.lyricSourceOrder, ALL_PLATFORMS);
         // 增强相关设置缺失时补默认，避免旧数据把开关带到非法值
         if (typeof lyric.llmTranslation !== "boolean") lyric.llmTranslation = false;
+        if (
+          lyric.pronunciationGranularity !== "line" &&
+          lyric.pronunciationGranularity !== "word"
+        ) {
+          lyric.pronunciationGranularity = "word";
+        }
         if (typeof lyric.llmRuby !== "boolean") lyric.llmRuby = false;
         // 旧版发音优化为 off/llm/dictionary 三态，转为开关并保留已开启的选择
         const legacyPronunciation = lyric.pronunciationOptimization as unknown;

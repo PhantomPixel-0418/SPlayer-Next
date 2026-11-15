@@ -12,6 +12,7 @@ const input = (): LyricEnhancementRequest => ({
   locale: "en-US",
   translate: true,
   pronunciation: false,
+  pronunciationGranularity: "word",
   ruby: false,
   lines: [
     {
@@ -141,6 +142,136 @@ test("补充日语注音写入假名", async (t) => {
   assert.equal(result.lines[0].words[1].ruby, undefined);
   assert.equal(result.lines[0].generatedRuby?.method, "llm");
   assert.deepEqual(result.warnings, []);
+});
+
+test("已有完整音译的日文行不再发音增强", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, romanLyric: "kimi wa" }]);
+    },
+  });
+  const request = input();
+  request.translate = false;
+  request.pronunciation = true;
+  request.lines[0].words = [
+    { word: "君", startTime: 0, endTime: 1 },
+    { word: "は", startTime: 1, endTime: 2 },
+  ];
+  request.lines[0].romanLyric = "kimi wa";
+  const result = await service.enhanceLyrics(request);
+  assert.equal(calls, 0);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.lines[0].romanLyric, "kimi wa");
+});
+
+test("逐行发音增强只写整行音译", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => openai([{ id: 0, romanLyric: "konnichiwa" }]),
+  });
+  const request = input();
+  request.translate = false;
+  request.pronunciation = true;
+  request.pronunciationGranularity = "line";
+  request.lines[0].words = [
+    { word: "こんにちは", startTime: 0, endTime: 1 },
+    { word: "", startTime: 1, endTime: 2 },
+  ];
+  const result = await service.enhanceLyrics(request);
+  assert.equal(result.lines[0].romanLyric, "konnichiwa");
+  assert.equal(result.lines[0].words[0].romanWord, undefined);
+  assert.equal(result.lines[0].generatedPronunciation?.method, "llm");
+  assert.deepEqual(result.warnings, []);
+});
+
+test("发音增强跳过逻辑的边界", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, romanLyric: "kimi wa", romanWords: ["kimi", "wa"] }]);
+    },
+  });
+
+  const run = async (mutate: (request: LyricEnhancementRequest) => void) => {
+    calls = 0;
+    const request = input();
+    request.translate = false;
+    request.ruby = false;
+    request.pronunciation = true;
+    mutate(request);
+    const result = await service.enhanceLyrics(request);
+    return { calls, warnings: result.warnings };
+  };
+
+  // 逐字粒度：所有实义词已带 romanWord 则跳过
+  assert.deepEqual(
+    await run((request) => {
+      request.pronunciationGranularity = "word";
+      request.lines[0].words = [
+        { word: "君", romanWord: "きみ", startTime: 0, endTime: 1 },
+        { word: "は", romanWord: "わ", startTime: 1, endTime: 2 },
+      ];
+    }),
+    { calls: 0, warnings: [] },
+  );
+
+  // 逐字粒度：空格填充的 romanWord 不算已有，仍请求
+  assert.deepEqual(
+    await run((request) => {
+      request.pronunciationGranularity = "word";
+      request.lines[0].words = [
+        { word: "君", romanWord: "   ", startTime: 0, endTime: 1 },
+        { word: "は", romanWord: "", startTime: 1, endTime: 2 },
+      ];
+    }),
+    { calls: 1, warnings: [] },
+  );
+
+  // 逐行粒度：已有 romanLyric 则跳过，与词级 romanWord 无关
+  assert.deepEqual(
+    await run((request) => {
+      request.pronunciationGranularity = "line";
+      request.lines[0].romanLyric = "kimi wa";
+    }),
+    { calls: 0, warnings: [] },
+  );
+
+  // 仅含标点的行不匹配 CJK 字符集，天然不请求
+  assert.deepEqual(
+    await run((request) => {
+      request.lines[0].words = [{ word: "!!!", startTime: 0, endTime: 1 }];
+    }),
+    { calls: 0, warnings: [] },
+  );
 });
 
 test("并发请求合并，清理后旧请求不写回缓存", async (t) => {

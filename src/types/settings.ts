@@ -9,6 +9,7 @@ import type { CjkTransformMode } from "@shared/types/opencc";
 import type { QualityLevel } from "@/utils/quality";
 import type { LyricAlignment } from "lyric-dom";
 import type { PaletteAlgorithm } from "@applemusic-like-lyrics/core";
+import type { PronunciationGranularity } from "@shared/types/lyricEnhancement";
 
 /** 播放器背景类型 */
 export type PlayerBgType = "blur" | "solid" | "animation";
@@ -144,6 +145,8 @@ export interface LyricSettings {
   llmTranslation: boolean;
   /** 是否使用 AI 补充缺失的发音 */
   pronunciationOptimization: boolean;
+  /** AI 发音增强粒度：逐行只产 romanLyric，逐字产 word.romanWord */
+  pronunciationGranularity: PronunciationGranularity;
   /** 是否使用 AI 补充缺失的注音（日语假名） */
   llmRuby: boolean;
   /** 歌词来源偏好 */

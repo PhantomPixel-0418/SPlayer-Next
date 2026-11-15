@@ -1085,6 +1085,12 @@
       "label": "LLM Pronunciation Fallback",
       "description": "Fill only missing pronunciation; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"
     },
+    "pronunciationGranularity": {
+      "label": "Transliteration Granularity",
+      "description": "Line fills only the whole-line romanization; word fills each word. Per-character alignment needs Auto-generate Word Effect enabled",
+      "line": "Line",
+      "word": "Word"
+    },
     "llmRuby": {
       "label": "LLM Ruby Fallback",
       "description": "Fill only missing kana ruby readings for Japanese kanji; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"

@@ -264,6 +264,20 @@ const lyricCategory: SettingCategory = {
           binding: { store: "settings", path: "lyric.pronunciationOptimization" },
           defaultValue: false,
           tag: { text: "Beta" },
+          childrenCondition: () => useSettingsStore().lyric.pronunciationOptimization,
+          children: [
+            {
+              key: "pronunciationGranularity",
+              type: "select",
+              binding: { store: "settings", path: "lyric.pronunciationGranularity" },
+              options: [
+                { value: "line", labelKey: "settings.pronunciationGranularity.line" },
+                { value: "word", labelKey: "settings.pronunciationGranularity.word" },
+              ],
+              defaultValue: "word",
+              tag: { text: "Beta" },
+            },
+          ],
         },
         {
           key: "llmRuby",

@@ -1,6 +1,9 @@
 import type { LyricData, LyricLine } from "@shared/types/lyrics";
 import type { Track } from "@shared/types/player";
-import type { LyricEnhancementRequest } from "@shared/types/lyricEnhancement";
+import type {
+  LyricEnhancementRequest,
+  PronunciationGranularity,
+} from "@shared/types/lyricEnhancement";
 
 /**
  * 创建只针对当前歌曲及歌词版本的展示增强请求
@@ -10,6 +13,7 @@ import type { LyricEnhancementRequest } from "@shared/types/lyricEnhancement";
  * @param locale - 目标界面语言
  * @param translate - 是否补充翻译
  * @param pronunciation - 是否补充发音
+ * @param pronunciationGranularity - 发音增强粒度，仅 pronunciation 为 true 时生效
  * @param ruby - 是否补充注音（日语假名）
  * @returns 关闭所有增强时返回 null
  */
@@ -20,6 +24,7 @@ export const buildLyricEnhancementRequest = (
   locale: string,
   translate: boolean,
   pronunciation: boolean,
+  pronunciationGranularity: PronunciationGranularity,
   ruby: boolean,
 ): LyricEnhancementRequest | null => {
   if (!source || !lines.length) return null;
@@ -40,6 +45,7 @@ export const buildLyricEnhancementRequest = (
     lines,
     translate: shouldTranslate,
     pronunciation,
+    pronunciationGranularity,
     ruby,
   };
 };

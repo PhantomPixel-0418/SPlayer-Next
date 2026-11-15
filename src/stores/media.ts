@@ -159,6 +159,7 @@ export const useMediaStore = defineStore("media", () => {
       useSettingsStore().lyric.autoGenerateWordByWord,
       useSettingsStore().lyric.llmTranslation,
       useSettingsStore().lyric.pronunciationOptimization,
+      useSettingsStore().lyric.pronunciationGranularity,
       useSettingsStore().lyric.llmRuby,
       useSettingsStore().locale,
     ],
@@ -257,13 +258,14 @@ export const useMediaStore = defineStore("media", () => {
       settings.locale,
       settings.lyric.llmTranslation,
       settings.lyric.pronunciationOptimization,
+      settings.lyric.pronunciationGranularity,
       settings.lyric.llmRuby,
     );
     if (import.meta.env.DEV) {
       console.info(
         "[lyric-enhancement] 请求",
         enhancementRequest
-          ? `format=${source?.format} lines=${enhancementRequest.lines.length} translate=${enhancementRequest.translate} pronunciation=${enhancementRequest.pronunciation} ruby=${enhancementRequest.ruby}`
+          ? `format=${source?.format} lines=${enhancementRequest.lines.length} translate=${enhancementRequest.translate} pronunciation=${enhancementRequest.pronunciation}(${enhancementRequest.pronunciationGranularity}) ruby=${enhancementRequest.ruby}`
           : "未创建（增强开关均关闭，或歌词不可增强）",
       );
     }

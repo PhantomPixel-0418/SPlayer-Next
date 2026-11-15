@@ -1,5 +1,8 @@
 import type { LyricLine } from "lyric-kit";
 
+/** 发音增强粒度：逐行只产出 romanLyric，逐字产出 word.romanWord */
+export type PronunciationGranularity = "line" | "word";
+
 /** 增强后的歌词行：在 lyric-kit 行类型上附加生成来源标记，原文与时序不改写 */
 export interface EnhancedLyricLine extends LyricLine {
   /** 自动补充的翻译及目标语言 */
@@ -20,6 +23,8 @@ export interface LyricEnhancementRequest {
   translate: boolean;
   /** 是否补充缺失的发音 */
   pronunciation: boolean;
+  /** 发音增强粒度，pronunciation 为 true 时生效 */
+  pronunciationGranularity: PronunciationGranularity;
   /** 是否补充缺失的注音（日语假名） */
   ruby: boolean;
 }
