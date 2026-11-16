@@ -190,8 +190,8 @@ Requirements:
 - Output translations only; do not explain, annotate, or add content that is not in the original.`
         : task === "pronunciation"
           ? lineGranularity
-            ? "Correct or supply romanized pronunciation as one single string per line. English does not need romanization; return null for those lines. For Japanese, space the romanization between lexical words, not between individual characters or beats. Keep each lexical word free of internal spaces, join words with single spaces, and never add a leading or trailing space. Return null for lines that cannot be romanized."
-            : "Correct or supply romanized pronunciation. English does not need romanization. Japanese spacing must follow lexical words, never individual beats or characters. Input words can split a single character, kana or syllable: return exactly one romanWords string for each input word in the same order, distributing the pronunciation across them. Include spaces at natural lexical word boundaries inside those strings, so joining them produces properly spaced pronunciation, and do not add spaces within a word. For example, timed input fragments chi/ra/ba/ru belong to one lexical word and must stay four entries [chi, ra, ba, ru], with the next lexical word starting with a space. Never merge timed entries. Return null for lines that cannot be romanized."
+            ? "Correct or supply romanized pronunciation as one single string per line. Detect the language actually sung and use its standard romanization: Hanyu Pinyin with tone marks for Mandarin, Jyutping with tone numbers for Cantonese (recognize Cantonese by its vocabulary and particles such as 咗, 嘅, 喺, 唔), Hepburn-style romaji for Japanese, Revised Romanization for Korean. English and other Latin-script lines need no romanization; return null for those. For Japanese, space the romanization between lexical words, not between individual characters or beats. Keep each lexical word free of internal spaces, join words with single spaces, and never add a leading or trailing space. Return null for lines that cannot be romanized."
+            : "Correct or supply romanized pronunciation. Detect the language actually sung and use its standard romanization: Hanyu Pinyin with tone marks for Mandarin, Jyutping with tone numbers for Cantonese (recognize Cantonese by its vocabulary and particles such as 咗, 嘅, 喺, 唔), Hepburn-style romaji for Japanese, Revised Romanization for Korean. English and other Latin-script lines need no romanization; return null for those. Japanese spacing must follow lexical words, never individual beats or characters. Input words can split a single character, kana or syllable: return exactly one romanWords string for each input word in the same order, distributing the pronunciation across them. Include spaces at natural lexical word boundaries inside those strings, so joining them produces properly spaced pronunciation, and do not add spaces within a word. For example, timed input fragments chi/ra/ba/ru belong to one lexical word and must stay four entries [chi, ra, ba, ru], with the next lexical word starting with a space. Never merge timed entries. Return null for lines that cannot be romanized."
           : 'Add hiragana ruby readings for Japanese lyrics. Return a "ruby" object for each line whose keys are the indexes of input words that contain kanji and whose values are their hiragana readings. Use the "index" field of each input word as the key. Omit words that need no reading (kana, Latin letters, numbers, punctuation); never annotate kana words and never add spaces. Return null if the line is not Japanese or cannot be annotated.';
     const outputField =
       task === "translation"
@@ -285,7 +285,7 @@ Requirements:
       .update(
         JSON.stringify({
           cacheVersion: 1,
-          promptVersion: 5,
+          promptVersion: 6,
           task,
           pronunciationGranularity: request.pronunciationGranularity,
           request: {
@@ -391,6 +391,7 @@ Requirements:
     const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(
       lines,
       request.pronunciation,
+      request.pronunciationGranularity,
       request.ruby,
     );
     if (!translationIds.length && !pronunciationIds.length && !rubyIds.length) {

@@ -200,6 +200,8 @@ describe("预载歌词增强预热", () => {
       hasWordTiming: false,
     });
     invalidatePreloadedLyric();
+    // 第 4 次调用显式配置解析结果，避免耗尽一次性 mock 后回退到其他测试遗留的默认实现
+    mockResolveLyricForPreload.mockResolvedValueOnce(lyric);
     preloadLyricForTrack(track);
     await flush();
 

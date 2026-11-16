@@ -31,7 +31,12 @@ export const buildLyricEnhancementRequest = (
   if (!source || !lines.length) return null;
   // TTML 歌词自带官方译文，跳过机器翻译，仅保留发音增强
   const shouldTranslate = translate === true && source.format !== "ttml";
-  const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(lines, pronunciation, ruby);
+  const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(
+    lines,
+    pronunciation,
+    pronunciationGranularity,
+    ruby,
+  );
   if (!shouldTranslate && !pronunciationIds.length && !rubyIds.length) return null;
   return {
     versionKey: JSON.stringify([

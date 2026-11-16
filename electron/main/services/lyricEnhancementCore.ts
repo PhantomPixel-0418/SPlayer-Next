@@ -1,5 +1,6 @@
 import type { LyricLine } from "@shared/types/lyrics";
 import type { EnhancedLyricLine, PronunciationGranularity } from "@shared/types/lyricEnhancement";
+import { hasRuby } from "../../../shared/utils/lyricEnhancement";
 
 type Task = "translation" | "pronunciation" | "ruby";
 export interface EnhancementPatch {
@@ -219,7 +220,8 @@ export const applyEnhancementPatch = (
         ...line,
         words: line.words.map((word, index) => {
           const reading = readingsByIndex.get(index);
-          return reading && !word.ruby?.length
+          // 与行选择共用同一有效注音判定，空白注音视为缺失并采用模型结果
+          return reading && !hasRuby(word)
             ? {
                 ...word,
                 ruby: [{ word: reading, startTime: word.startTime, endTime: word.endTime }],

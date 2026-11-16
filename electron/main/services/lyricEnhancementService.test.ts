@@ -91,6 +91,7 @@ test("Anthropic 发音请求保留英文并按原片段输出", async (t) => {
       assert.equal(headers["anthropic-version"], "2023-06-01");
       const prompt = JSON.parse(options!.body as string).messages[0].content as string;
       assert.ok(prompt.includes("lexical words"));
+      assert.ok(prompt.includes("Jyutping"));
       assert.ok(!prompt.includes("Hello there"));
       return new Response(
         JSON.stringify({
@@ -144,7 +145,7 @@ test("补充日语注音写入假名", async (t) => {
   assert.deepEqual(result.warnings, []);
 });
 
-test("已有完整音译的日文行不再发音增强", async (t) => {
+test("逐字粒度下仅有整行音译时仍补充逐字发音", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   let calls = 0;
@@ -158,21 +159,23 @@ test("已有完整音译的日文行不再发音增强", async (t) => {
     }),
     fetch: async () => {
       calls++;
-      return openai([{ id: 0, romanLyric: "kimi wa" }]);
+      return openai([{ id: 0, romanWords: ["kimi", " wa"] }]);
     },
   });
   const request = input();
   request.translate = false;
   request.pronunciation = true;
+  request.pronunciationGranularity = "word";
   request.lines[0].words = [
     { word: "君", startTime: 0, endTime: 1 },
     { word: "は", startTime: 1, endTime: 2 },
   ];
   request.lines[0].romanLyric = "kimi wa";
   const result = await service.enhanceLyrics(request);
-  assert.equal(calls, 0);
-  assert.deepEqual(result.warnings, []);
-  assert.equal(result.lines[0].romanLyric, "kimi wa");
+  assert.equal(calls, 1);
+  assert.equal(result.lines[0].words[0].romanWord, "kimi");
+  assert.equal(result.lines[0].words[1].romanWord, " wa");
+  assert.equal(result.lines[0].generatedPronunciation?.method, "llm");
 });
 
 test("已有逐字音译时逐行粒度也不再生成整行音译", async (t) => {
@@ -217,7 +220,11 @@ test("逐行发音增强只写整行音译", async (t) => {
       model: "test",
       apiKey: "secret",
     }),
-    fetch: async () => openai([{ id: 0, romanLyric: "konnichiwa" }]),
+    fetch: async (_url, options) => {
+      const prompt = JSON.parse(options!.body as string).messages[0].content as string;
+      assert.ok(prompt.includes("Jyutping"));
+      return openai([{ id: 0, romanLyric: "konnichiwa" }]);
+    },
   });
   const request = input();
   request.translate = false;
@@ -232,6 +239,36 @@ test("逐行发音增强只写整行音译", async (t) => {
   assert.equal(result.lines[0].words[0].romanWord, undefined);
   assert.equal(result.lines[0].generatedPronunciation?.method, "llm");
   assert.deepEqual(result.warnings, []);
+});
+
+test("粤语等非日语 CJK 行同样参与发音增强", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async (_url, options) => {
+      calls++;
+      const prompt = JSON.parse(options!.body as string).messages[0].content as string;
+      assert.ok(prompt.includes("Jyutping"));
+      return openai([{ id: 0, romanWords: ["go2"] }]);
+    },
+  });
+  const request = input();
+  request.translate = false;
+  request.pronunciation = true;
+  request.lines[0].language = "zh-CN";
+  // 扩展区汉字不在基本平面内，仍需触发音译
+  request.lines[0].words = [{ word: "𠮶", startTime: 0, endTime: 1 }];
+  const result = await service.enhanceLyrics(request);
+  assert.equal(calls, 1);
+  assert.equal(result.lines[0].words[0].romanWord, "go2");
 });
 
 test("发音增强跳过逻辑的边界", async (t) => {
@@ -372,6 +409,7 @@ test("汉字词缺少有效注音时仍调用注音模型", async (t) => {
   const result = await service.enhanceLyrics(request);
   assert.equal(calls, 1);
   assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.lines[0].words[0].ruby, [{ word: "きみ", startTime: 0, endTime: 1 }]);
   assert.equal(result.lines[0].generatedRuby?.method, "llm");
 });
 
