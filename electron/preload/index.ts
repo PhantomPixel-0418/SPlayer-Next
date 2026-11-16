@@ -547,9 +547,6 @@ const api = {
   lyricEnhancement: {
     enhance: (request: LyricEnhancementRequest) =>
       ipcRenderer.invoke("lyricEnhancement:enhance", request),
-    dictionaryStatus: () => ipcRenderer.invoke("lyricEnhancement:dictionaryStatus"),
-    downloadDictionary: () => ipcRenderer.invoke("lyricEnhancement:downloadDictionary"),
-    removeDictionary: () => ipcRenderer.invoke("lyricEnhancement:removeDictionary"),
     clearCache: () => ipcRenderer.invoke("lyricEnhancement:clearCache"),
   },
   lyrics: {

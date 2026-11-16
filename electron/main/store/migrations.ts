@@ -1,4 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { SystemConfig } from "@shared/types/settings";
+import { defaultCacheDir } from "@main/utils/paths";
 
 export interface Migration {
   /** 版本号，递增整数 */
@@ -26,6 +29,16 @@ export const migrations: Migration[] = [
       if (data.lyric.amllDbServer === "https://amlldb.bikonoo.com/%p/%s.ttml") {
         data.lyric.amllDbServer = "";
       }
+    },
+  },
+  {
+    // 离线日语词典已移除，清理旧配置项和已下载文件（失败不影响启动）
+    version: 3,
+    migrate: (data) => {
+      delete (data.lyric as unknown as Record<string, unknown>).pronunciationAlignment;
+      void fs.promises
+        .rm(path.join(defaultCacheDir, "lyric-dictionary"), { recursive: true, force: true })
+        .catch(() => {});
     },
   },
 ];

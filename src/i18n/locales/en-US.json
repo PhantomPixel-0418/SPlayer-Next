@@ -1082,37 +1082,27 @@
       "description": "Fill only translations missing in the current language; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"
     },
     "pronunciationOptimization": {
-      "label": "Pronunciation Optimization",
-      "description": "Choose how pronunciation is optimized; LLM mode sends lyrics to the configured API and may incur charges. Results are cached and marked as AI-generated",
-      "off": "Off",
-      "llm": "Generate with LLM",
-      "dictionary": "Offline dictionary (Japanese)"
+      "label": "LLM Pronunciation Fallback",
+      "description": "Fill only missing pronunciation; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"
+    },
+    "pronunciationGranularity": {
+      "label": "Transliteration Granularity",
+      "description": "Line fills only the whole-line romanization; word fills each word. Per-character alignment needs Auto-generate Word Effect enabled",
+      "line": "Line",
+      "word": "Word"
+    },
+    "llmRuby": {
+      "label": "LLM Ruby Fallback",
+      "description": "Fill only missing kana ruby readings for Japanese kanji; lyrics are sent to the configured API and may incur charges. Results are cached and marked as AI-generated"
     },
     "lyricEnhancement": {
       "modelTitle": "Lyric Enhancement Model",
       "noModel": "No model selected",
       "configureModel": "Configure model",
-      "dictionaryTitle": "Offline Pronunciation Dictionary",
-      "dictionaryDescription": "Based on Kuromoji and IPADIC; Japanese pronunciation only. Dictionary size is about 17–21 MB",
-      "installed": "Installed",
-      "notInstalled": "Not installed",
-      "downloadDictionary": "Download dictionary",
-      "removeDictionary": "Remove dictionary",
       "clearCache": "Clear generated cache",
       "cacheCleared": "Lyric enhancement cache cleared",
-      "generatedTranslation": "AI translation · generated",
-      "generatedPronunciation": "AI pronunciation · generated",
-      "dictionaryPronunciation": "Dictionary pronunciation · generated",
-      "lineFallback": "Some pronunciations use line timing",
-      "processing": "Enhancing lyrics…",
+      "badgeLlm": "LLM",
       "failed": "Lyric enhancement incomplete"
-    },
-    "pronunciationAlignment": {
-      "label": "Auto pronunciation alignment",
-      "description": "Word: align per word; Line: one reading per line; Auto: unify per lyrics",
-      "auto": "Auto",
-      "word": "Word",
-      "line": "Line"
     },
     "cjkTransform": {
       "label": "Chinese Conversion",

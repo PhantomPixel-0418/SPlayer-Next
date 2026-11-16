@@ -4,16 +4,8 @@ import type { LyricData } from "@shared/types/lyrics";
 
 import { useSettingsStore } from "@/stores/settings";
 import { watchLyricPreference } from "@/services/lyric/loader";
-import {
-  applyLyricLanguages,
-  applyTimestampOffset,
-  clampLastLineEnd,
-  extractLyricAuthors,
-  findLyricIndex,
-  normalizeLyricLines,
-  parseLyric,
-} from "lyric-kit";
-import { applyLyricExclude } from "@/utils/lyric/lyricStripper";
+import { parseLyricForDisplay } from "@/services/lyric/displayParse";
+import { findLyricIndex } from "lyric-kit";
 import { applyLyricCjkTransform } from "@/utils/lyric/cjkTransform";
 import { buildLyricEnhancementRequest } from "@/services/lyric/enhancement";
 
@@ -159,7 +151,8 @@ export const useMediaStore = defineStore("media", () => {
       useSettingsStore().lyric.autoGenerateWordByWord,
       useSettingsStore().lyric.llmTranslation,
       useSettingsStore().lyric.pronunciationOptimization,
-      useSettingsStore().system.lyric.pronunciationAlignment,
+      useSettingsStore().lyric.pronunciationGranularity,
+      useSettingsStore().lyric.llmRuby,
       useSettingsStore().locale,
     ],
     () => {
@@ -181,57 +174,16 @@ export const useMediaStore = defineStore("media", () => {
     let nextLines: LyricLine[] = [];
     let authors: string[] = [];
     let hasWordTiming = false;
-    const settings = useSettingsStore();
     if (source && input) {
       try {
-        const result = parseLyric(
-          {
-            content: input.content,
-            format: source.format,
-            translation: input.translation,
-            translationFormat: input.translationFormat,
-            romaji: input.romaji,
-            romajiFormat: input.romajiFormat,
-          },
-          {
-            detectBackground: settings.lyric.detectBackgroundLyrics,
-            preferredLang: settings.locale,
-            cleanKangxi: true,
-            extractMetadata: true,
-          },
-        );
-        if (source.timeShiftMs) applyTimestampOffset(result.lines, source.timeShiftMs);
-        nextLines = applyLyricExclude(result.lines, track.value);
-        normalizeLyricLines(nextLines);
-        nextLines = clampLastLineEnd(nextLines, track.value?.duration);
-        const segmenter = settings.lyric.autoGenerateWordByWord
-          ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-          : null;
-        for (const line of nextLines) {
-          const timed =
-            (line.words.length > 1 ||
-              ["ttml", "lys", "yrc", "qrc", "krc"].includes(source.format)) &&
-            line.words.some((word) => word.endTime > word.startTime);
-          if (timed) {
-            hasWordTiming = true;
-            continue;
-          }
-          if (!segmenter || line.endTime <= line.startTime) continue;
-          const text = line.words.map((word) => word.word).join("");
-          const characters = Array.from(segmenter.segment(text), (part) => part.segment);
-          if (!characters.length) continue;
-          const duration = line.endTime - line.startTime;
-          line.words = characters.map((word, index) => ({
-            word,
-            startTime: line.startTime + Math.round((duration * index) / characters.length),
-            endTime: line.startTime + Math.round((duration * (index + 1)) / characters.length),
-          }));
-          hasWordTiming = true;
-        }
-        applyLyricLanguages(nextLines);
-        authors = result.metadata.authors?.length
-          ? result.metadata.authors
-          : extractLyricAuthors(input.content, source.format);
+        const parsed = parseLyricForDisplay({
+          source,
+          input,
+          track: track.value,
+        });
+        nextLines = parsed.lines;
+        authors = parsed.authors;
+        hasWordTiming = parsed.hasWordTiming;
       } catch (e) {
         console.error("[media] parse lyric failed:", e);
         nextLines = [];
@@ -248,6 +200,7 @@ export const useMediaStore = defineStore("media", () => {
     syncToMain();
 
     // 原歌词先展示，较慢的网络增强完成后再替换展示副本
+    const settings = useSettingsStore();
     const cjkMode = settings.lyric.cjkTransform;
     const needsCjkTransform = hasContent && cjkMode !== "none";
     const enhancementRequest = buildLyricEnhancementRequest(
@@ -257,16 +210,29 @@ export const useMediaStore = defineStore("media", () => {
       settings.locale,
       settings.lyric.llmTranslation,
       settings.lyric.pronunciationOptimization,
+      settings.lyric.pronunciationGranularity,
+      settings.lyric.llmRuby,
     );
+    if (import.meta.env.DEV) {
+      console.info(
+        "[lyric-enhancement] 请求",
+        enhancementRequest
+          ? `format=${source?.format} lines=${enhancementRequest.lines.length} translate=${enhancementRequest.translate} pronunciation=${enhancementRequest.pronunciation}(${enhancementRequest.pronunciationGranularity}) ruby=${enhancementRequest.ruby}`
+          : "未创建（增强开关均关闭，或歌词不可增强）",
+      );
+    }
     const enhancement = enhancementRequest
-      ? window.api.lyricEnhancement.enhance(enhancementRequest).catch(() => ({
-          lines: nextLines,
-          warnings: [
-            settings.locale.startsWith("zh")
-              ? "歌词增强失败，请检查模型和词典配置"
-              : "Lyric enhancement failed; check model and dictionary settings",
-          ],
-        }))
+      ? window.api.lyricEnhancement.enhance(enhancementRequest).catch((error) => {
+          if (import.meta.env.DEV) console.warn("[lyric-enhancement] IPC 调用失败", error);
+          return {
+            lines: nextLines,
+            warnings: [
+              settings.locale.startsWith("zh")
+                ? "歌词增强失败，请检查模型配置"
+                : "Lyric enhancement failed; check model settings",
+            ],
+          };
+        })
       : null;
     lyricEnhancementPending.value = enhancement !== null;
     if (needsCjkTransform || enhancement) {
@@ -281,6 +247,9 @@ export const useMediaStore = defineStore("media", () => {
           if (!enhancement) return;
           const result = await enhancement;
           if (currentTransformToken !== transformToken) return;
+          if (import.meta.env.DEV && result.warnings.length) {
+            console.warn("[lyric-enhancement] 警告", result.warnings);
+          }
           const enhanced = needsCjkTransform
             ? await applyLyricCjkTransform(result.lines, cjkMode)
             : result.lines;

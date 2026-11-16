@@ -2,8 +2,9 @@ import type { LyricData, LyricLine } from "@shared/types/lyrics";
 import type { Track } from "@shared/types/player";
 import type {
   LyricEnhancementRequest,
-  PronunciationOptimization,
+  PronunciationGranularity,
 } from "@shared/types/lyricEnhancement";
+import { selectPronunciationAndRubyIds } from "@shared/utils/lyricEnhancement";
 
 /**
  * 创建只针对当前歌曲及歌词版本的展示增强请求
@@ -12,7 +13,9 @@ import type {
  * @param track - 当前曲目及媒体服务器身份
  * @param locale - 目标界面语言
  * @param translate - 是否补充翻译
- * @param pronunciation - 发音优化方式
+ * @param pronunciation - 是否补充发音
+ * @param pronunciationGranularity - 发音增强粒度，仅 pronunciation 为 true 时生效
+ * @param ruby - 是否补充注音（日语假名）
  * @returns 关闭所有增强时返回 null
  */
 export const buildLyricEnhancementRequest = (
@@ -21,10 +24,20 @@ export const buildLyricEnhancementRequest = (
   track: Track | null,
   locale: string,
   translate: boolean,
-  pronunciation: PronunciationOptimization,
+  pronunciation: boolean,
+  pronunciationGranularity: PronunciationGranularity,
+  ruby: boolean,
 ): LyricEnhancementRequest | null => {
-  if (!source || !lines.length || (!translate && (!pronunciation || pronunciation === "off")))
-    return null;
+  if (!source || !lines.length) return null;
+  // TTML 歌词自带官方译文，跳过机器翻译，仅保留发音增强
+  const shouldTranslate = translate === true && source.format !== "ttml";
+  const { pronunciationIds, rubyIds } = selectPronunciationAndRubyIds(
+    lines,
+    pronunciation,
+    pronunciationGranularity,
+    ruby,
+  );
+  if (!shouldTranslate && !pronunciationIds.length && !rubyIds.length) return null;
   return {
     versionKey: JSON.stringify([
       track?.source,
@@ -37,7 +50,9 @@ export const buildLyricEnhancementRequest = (
     ]),
     locale,
     lines,
-    translate: translate === true,
-    pronunciation: pronunciation || "off",
+    translate: shouldTranslate,
+    pronunciation: pronunciationIds.length > 0,
+    pronunciationGranularity,
+    ruby: rubyIds.length > 0,
   };
 };

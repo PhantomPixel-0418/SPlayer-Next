@@ -1,14 +1,14 @@
 import path from "node:path";
 import { defaultCacheDir } from "@main/utils/paths";
+import { mediaLog } from "@main/utils/logger";
 import { getActiveAiModel } from "@main/services/ai/model";
-import { optimizeWithJapaneseDictionary } from "@main/services/lyricDictionary";
 import { createLyricEnhancementService } from "./lyricEnhancementService";
 
 const service = createLyricEnhancementService({
   cacheDir: path.join(defaultCacheDir, "lyric-enhancement"),
   getActiveAiModel,
-  optimizeWithJapaneseDictionary,
   fetch,
+  log: mediaLog,
 });
 
 export const enhanceLyrics = service.enhanceLyrics;

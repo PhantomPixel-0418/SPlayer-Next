@@ -3,14 +3,13 @@ import { createI18n } from "vue-i18n";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import zhCN from "@/i18n/locales/zh-CN.json";
 import type { AiModelState } from "@shared/types/ai";
-import type { LyricDictionaryStatus } from "@shared/types/lyricEnhancement";
+import { toast } from "@/composables/useToast";
 import LyricEnhancementConfig from "./LyricEnhancementConfig.vue";
+
+vi.mock("@/composables/useToast", () => ({ toast: { success: vi.fn() } }));
 
 const fixtures = vi.hoisted(() => ({
   listModels: vi.fn(),
-  dictionaryStatus: vi.fn(),
-  downloadDictionary: vi.fn(),
-  removeDictionary: vi.fn(),
   clearCache: vi.fn(),
 }));
 
@@ -29,11 +28,6 @@ const models: AiModelState = {
     },
   ],
   activeModelId: "model-1",
-};
-const notInstalled: LyricDictionaryStatus = {
-  installed: false,
-  downloading: false,
-  version: "1",
 };
 
 /** 挂载歌词增强设置面板 */
@@ -69,20 +63,12 @@ const mountConfig = (): VueWrapper =>
 
 beforeEach(() => {
   fixtures.listModels.mockResolvedValue(models);
-  fixtures.dictionaryStatus.mockResolvedValue(notInstalled);
-  fixtures.downloadDictionary.mockResolvedValue({ ...notInstalled, installed: true });
-  fixtures.removeDictionary.mockResolvedValue(notInstalled);
   fixtures.clearCache.mockResolvedValue(undefined);
   Object.assign(window, {
     api: {
       system: { platform: "win32" },
       aiModel: { list: fixtures.listModels },
-      lyricEnhancement: {
-        dictionaryStatus: fixtures.dictionaryStatus,
-        downloadDictionary: fixtures.downloadDictionary,
-        removeDictionary: fixtures.removeDictionary,
-        clearCache: fixtures.clearCache,
-      },
+      lyricEnhancement: { clearCache: fixtures.clearCache },
     },
   });
 });
@@ -103,58 +89,56 @@ afterEach(() => {
 });
 
 describe("歌词增强设置 UI", () => {
-  it("读取当前模型和词典状态，并提供带 Beta 标记的开关设置", async () => {
+  it("读取当前模型，并提供带 Beta 标记的开关设置", async () => {
     wrapper = mountConfig();
     await flushPromises();
     expect(wrapper.text()).toContain("翻译模型 · example-model");
-    expect(wrapper.text()).toContain(zhCN.settings.lyricEnhancement.notInstalled);
-    expect(wrapper.text()).toContain(zhCN.settings.lyricEnhancement.downloadDictionary);
 
     const section = lyricCategory.sections?.find(
       (item) => item.id === "lyricTranslationPronunciation",
     );
     const translation = section?.items.find((item) => item.key === "llmTranslation");
     const pronunciation = section?.items.find((item) => item.key === "pronunciationOptimization");
+    const ruby = section?.items.find((item) => item.key === "llmRuby");
     expect(translation).toMatchObject({
       type: "switch",
       defaultValue: false,
       tag: { text: "Beta" },
     });
     expect(pronunciation).toMatchObject({
-      type: "select",
-      defaultValue: "off",
+      type: "switch",
+      defaultValue: false,
       tag: { text: "Beta" },
-      options: expect.arrayContaining([
-        { value: "off", labelKey: "settings.pronunciationOptimization.off" },
-        { value: "llm", labelKey: "settings.pronunciationOptimization.llm" },
-        { value: "dictionary", labelKey: "settings.pronunciationOptimization.dictionary" },
-      ]),
+    });
+    expect(ruby).toMatchObject({
+      type: "switch",
+      defaultValue: false,
+      tag: { text: "Beta" },
     });
   });
 
-  it("词典下载失败显示错误，成功后更新状态并通知当前歌词", async () => {
+  it("清除生成缓存失败显示错误，成功后通知当前歌词", async () => {
     wrapper = mountConfig();
     await flushPromises();
     const changed = vi.fn();
     window.addEventListener("lyric-enhancement:changed", changed);
     cleanupListeners.push(() => window.removeEventListener("lyric-enhancement:changed", changed));
 
-    fixtures.downloadDictionary.mockRejectedValueOnce(new Error("download failed"));
+    fixtures.clearCache.mockRejectedValueOnce(new Error("clear failed"));
     await wrapper.findAll("button")[1].trigger("click");
     await flushPromises();
-    expect(wrapper.get('[role="alert"]').text()).toContain("download failed");
+    expect(wrapper.get('[role="alert"]').text()).toContain("clear failed");
     expect(changed).not.toHaveBeenCalled();
-    expect(wrapper.findAll("button")[1].attributes("disabled")).toBeUndefined();
     expect(wrapper.findAll("button")[1].attributes("data-loading")).toBe("false");
 
-    fixtures.downloadDictionary.mockResolvedValueOnce({ ...notInstalled, installed: true });
     await wrapper.findAll("button")[1].trigger("click");
     await flushPromises();
-    expect(wrapper.text()).toContain(zhCN.settings.lyricEnhancement.installed);
+    expect(fixtures.clearCache).toHaveBeenCalledTimes(2);
     expect(changed).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith(zhCN.settings.lyricEnhancement.cacheCleared);
   });
 
-  it("关闭模型配置弹窗后重新读取模型和词典状态并通知当前歌词", async () => {
+  it("关闭模型配置弹窗后重新读取模型并通知当前歌词", async () => {
     wrapper = mountConfig();
     await flushPromises();
     const changed = vi.fn();
@@ -168,7 +152,6 @@ describe("歌词增强设置 UI", () => {
     await wrapper.get("[data-test='close']").trigger("click");
     await flushPromises();
     expect(fixtures.listModels).toHaveBeenCalledTimes(2);
-    expect(fixtures.dictionaryStatus).toHaveBeenCalledTimes(2);
     expect(changed).toHaveBeenCalledTimes(1);
   });
 });
