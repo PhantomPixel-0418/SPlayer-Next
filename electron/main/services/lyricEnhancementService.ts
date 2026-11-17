@@ -11,6 +11,7 @@ import type {
 import { selectPronunciationAndRubyIds } from "../../../shared/utils/lyricEnhancement";
 import {
   applyEnhancementPatch,
+  hasLocaleTranslation,
   matchesLocale,
   validateEnhancementPatch,
   type EnhancementPatch,
@@ -383,7 +384,7 @@ Requirements:
           return text.trim() &&
             !matchesLocale(text, request.locale, line.language) &&
             line.generatedTranslation?.language !== request.locale &&
-            !matchesLocale(line.translatedLyric, request.locale)
+            !hasLocaleTranslation(line.translatedLyric, request.locale)
             ? [id]
             : [];
         })

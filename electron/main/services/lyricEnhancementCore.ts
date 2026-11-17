@@ -12,6 +12,12 @@ export interface EnhancementPatch {
   ruby?: Record<string, string> | null;
 }
 
+/** 汉字文本 */
+const HAN_TEXT = /\p{Script=Han}/u;
+
+/** 假名或谚文文本，用于与汉字区分中日韩语言 */
+const KANA_HANGUL_TEXT = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
 /**
  * 判断文本是否明显属于界面语言，无法判断时交给模型
  * @param text - 待识别文本
@@ -61,6 +67,24 @@ export const matchesLocale = (text: string, locale: string, language?: string): 
     return words.filter((word) => signals.has(word)).length >= 2;
   }
   return false;
+};
+
+/**
+ * 判断已有译文是否已属于目标语言，避免重复生成或覆盖人工译文
+ * @param text - 已有译文
+ * @param locale - 目标界面语言
+ * @returns 是否已是可直接展示的目标语言译文
+ */
+export const hasLocaleTranslation = (text: string, locale: string): boolean => {
+  const value = text.trim();
+  if (!value) return false;
+  if (locale.startsWith("zh")) return HAN_TEXT.test(value) && !KANA_HANGUL_TEXT.test(value);
+  if (locale.startsWith("en"))
+    return (
+      /^[a-z\d\p{Punctuation}\p{Separator}\s]+$/iu.test(value) && /\p{Script=Latin}/u.test(value)
+    );
+  // 其他目标语言无法可靠判定，已有译文直接沿用
+  return true;
 };
 
 /**

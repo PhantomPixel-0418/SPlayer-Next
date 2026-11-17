@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { LyricLine } from "@shared/types/lyrics";
 import {
   applyEnhancementPatch,
+  hasLocaleTranslation,
   matchesLocale,
   validateEnhancementPatch,
 } from "./lyricEnhancementCore";
@@ -128,4 +129,16 @@ test("识别明确的界面语言，避免覆盖已有翻译", () => {
   assert.equal(matchesLocale("東京", "zh-CN"), false);
   assert.equal(matchesLocale("kimi wa", "en-US"), false);
   assert.equal(matchesLocale("hola mundo", "en-US"), false);
+});
+
+test("识别已有译文是否已是目标语言", () => {
+  assert.equal(hasLocaleTranslation("再见了", "zh-CN"), true);
+  assert.equal(hasLocaleTranslation("好久不见", "zh-CN"), true);
+  assert.equal(hasLocaleTranslation("ただいま", "zh-CN"), false);
+  assert.equal(hasLocaleTranslation("안녕", "zh-CN"), false);
+  assert.equal(hasLocaleTranslation("Goodbye", "zh-CN"), false);
+  assert.equal(hasLocaleTranslation("Goodbye", "en-US"), true);
+  assert.equal(hasLocaleTranslation("Stay with me", "en-US"), true);
+  assert.equal(hasLocaleTranslation("こんにちは", "en-US"), false);
+  assert.equal(hasLocaleTranslation("   ", "zh-CN"), false);
 });

@@ -73,6 +73,36 @@ test("OpenAI 请求、缓存隔离及失败不会覆盖原文", async (t) => {
   assert.ok(!JSON.stringify(result).includes("private provider error"));
 });
 
+test("已有目标语言译文时不再生成翻译", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let calls = 0;
+  const service = createLyricEnhancementService({
+    cacheDir: dir,
+    getActiveAiModel: async () => ({
+      protocol: "openai-compatible",
+      baseUrl: "https://example.test/v1",
+      model: "test",
+      apiKey: "secret",
+    }),
+    fetch: async () => {
+      calls++;
+      return openai([{ id: 0, translation: "hello" }]);
+    },
+  });
+  const request = input();
+  request.locale = "zh-CN";
+  request.lines[0].translatedLyric = "再见了";
+  const zh = await service.enhanceLyrics(request);
+  assert.equal(calls, 0);
+  assert.equal(zh.lines[0].translatedLyric, "再见了");
+  request.locale = "en-US";
+  request.lines[0].translatedLyric = "Goodbye";
+  const en = await service.enhanceLyrics(request);
+  assert.equal(calls, 0);
+  assert.equal(en.lines[0].translatedLyric, "Goodbye");
+});
+
 test("Anthropic 发音请求保留英文并按原片段输出", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lyric-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
