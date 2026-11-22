@@ -2,10 +2,10 @@ import {
   IsolationRenderer,
   MeshGradientRenderer,
   PixiRenderer,
+  TitaniumRenderer,
   type BaseRenderer,
 } from "@applemusic-like-lyrics/core";
 import type { PlayerBgRenderer } from "@/types/settings";
-import { TitaniumRenderer } from "./amll/titanium";
 
 /** 渲染器标识可能来自旧版本持久化的配置，取值不受类型约束，故用 Partial */
 const RENDERER_MAP: Partial<
