@@ -2,7 +2,6 @@
 import type { Artist } from "@shared/types/player";
 import type { EnhancedLyricLine } from "@shared/types/lyricEnhancement";
 import type { SSelectOption } from "@/components/ui/SSelect.vue";
-import ExplicitTag from "@/components/list/ExplicitTag.vue";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
@@ -185,14 +184,18 @@ const alignItems = computed(() => {
 <template>
   <div
     v-if="displayTrack"
-    class="w-full flex flex-col gap-[0.5em] overflow-hidden px-2"
+    class="w-full flex flex-col gap-[0.5em] overflow-x-clip overflow-y-visible px-2"
     style="font-size: clamp(12px, calc(14 / 1080 * 100vh), 16px)"
     :class="alignItems"
   >
     <!-- 标题 -->
     <SMarquee fit class="max-w-full text-[2em] font-semibold leading-tight">
       {{ displayTrack.title }}
-      <ExplicitTag :explicit="displayTrack.explicit" tinted class="ml-1 text-[0.6em]" />
+      <IconSpExplicit
+        v-if="displayTrack.explicit && !settings.preset.hideExplicitTag"
+        :aria-label="t('songList.explicitTagLabel')"
+        class="inline-block align-[-0.1em] ml-1.5 size-[0.65em] text-cover/75"
+      />
     </SMarquee>
     <!-- 副标题/注释 -->
     <div

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Artist } from "@shared/types/player";
-import ExplicitTag from "@/components/list/ExplicitTag.vue";
 import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
+import { useSettingsStore } from "@/stores/settings";
 import { useFavorite } from "@/composables/useFavorite";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { useProgressLyric } from "@/composables/useProgressLyric";
@@ -25,6 +25,7 @@ import "./amllMediaButton.css";
 const { t } = useI18n();
 const status = useStatusStore();
 const media = useMediaStore();
+const settings = useSettingsStore();
 const fav = useFavorite();
 const { isPlaying, isLoading, duration, repeatMode, shuffleMode, heartMode, fmMode } =
   storeToRefs(status);
@@ -131,7 +132,11 @@ const { items: menuItems, handleSelect: onMenuSelect } = useTrackMenu(toRef(medi
       <div class="flex-1 min-w-0">
         <SMarquee fit class="max-w-full font-semibold tracking-[0.2px] text-cover/95">
           {{ displayTrack?.title }}
-          <ExplicitTag :explicit="displayTrack?.explicit" tinted class="ml-1" />
+          <IconSpExplicit
+            v-if="displayTrack?.explicit && !settings.preset.hideExplicitTag"
+            :aria-label="t('songList.explicitTagLabel')"
+            class="inline-block align-[-0.12em] ml-1 size-[0.85em] text-cover/70"
+          />
         </SMarquee>
         <div class="truncate tracking-[0.2px] text-cover/50">
           <template v-if="artists.length">
