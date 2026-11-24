@@ -24,6 +24,7 @@ import IconTrash2 from "~icons/lucide/trash-2";
 import IconListMinus from "~icons/lucide/list-minus";
 import IconCloudOff from "~icons/lucide/cloud-off";
 import IconSearch from "~icons/lucide/search";
+import IconClapperboard from "~icons/lucide/clapperboard";
 import IconMessageCircle from "~icons/lucide/message-circle";
 import IconMoreHorizontal from "~icons/lucide/more-horizontal";
 import IconPuzzle from "~icons/lucide/puzzle";
@@ -160,6 +161,12 @@ export const useTrackMenu = (
         separator: true,
       },
       {
+        key: "watchMv",
+        label: t("songList.context.watchMv"),
+        icon: markRaw(IconClapperboard),
+        show: !!track.value?.mv,
+      },
+      {
         key: "comments",
         label: t("comments.name"),
         icon: markRaw(IconMessageCircle),
@@ -291,6 +298,9 @@ export const useTrackMenu = (
               : {}),
           },
         });
+        break;
+      case "watchMv":
+        if (current.mv) router.push({ path: "/video", query: { id: current.mv, type: "mv" } });
         break;
       case "comments":
         status.showComments(current);

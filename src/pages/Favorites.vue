@@ -8,9 +8,11 @@ import {
   artistsToCoverItems,
   playlistToCoverItem,
 } from "@/utils/format/coverItem";
+import { videoToCoverItem } from "@/utils/format/video";
 import CoverList from "@/components/list/CoverList.vue";
 import IconLucideListMusic from "~icons/lucide/list-music";
 import IconLucideDisc3 from "~icons/lucide/disc-3";
+import IconLucideClapperboard from "~icons/lucide/clapperboard";
 import IconLucideUser from "~icons/lucide/user";
 import IconMaterialSymbolsFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
 
@@ -19,9 +21,9 @@ const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
 
-type FavTab = "playlist" | "album" | "artist";
+type FavTab = "playlist" | "album" | "artist" | "mv";
 
-const TAB_KEYS: readonly FavTab[] = ["playlist", "album", "artist"];
+const TAB_KEYS: readonly FavTab[] = ["playlist", "album", "artist", "mv"];
 
 /** 当前 tab */
 const activeTab = computed<FavTab>(() => {
@@ -39,6 +41,7 @@ const tabs = computed(() => [
   { key: "playlist" satisfies FavTab, label: t("favorites.tabs.playlist") },
   { key: "album" satisfies FavTab, label: t("favorites.tabs.album") },
   { key: "artist" satisfies FavTab, label: t("favorites.tabs.artist") },
+  { key: "mv" satisfies FavTab, label: t("favorites.tabs.mv") },
 ]);
 
 const playlistItems = computed<CoverItem[]>(() =>
@@ -52,9 +55,12 @@ const albumItems = computed<CoverItem[]>(() => albumsToCoverItems(user.albums));
 
 const artistItems = computed<CoverItem[]>(() => artistsToCoverItems(user.artists));
 
+const mvItems = computed<CoverItem[]>(() => user.mvs.map(videoToCoverItem));
+
 const currentItems = computed<CoverItem[]>(() => {
   if (activeTab.value === "playlist") return playlistItems.value;
   if (activeTab.value === "album") return albumItems.value;
+  if (activeTab.value === "mv") return mvItems.value;
   return artistItems.value;
 });
 
@@ -70,6 +76,11 @@ const countMeta = computed(() => {
         icon: IconLucideUser,
         text: t("common.totalArtists", { count: artistItems.value.length }),
       };
+    case "mv":
+      return {
+        icon: IconLucideClapperboard,
+        text: t("common.totalMvs", { count: mvItems.value.length }),
+      };
     case "playlist":
     default:
       return {
@@ -82,6 +93,8 @@ const countMeta = computed(() => {
 const handleClick = (item: CoverItem): void => {
   if (activeTab.value === "artist") {
     router.push(`/artist/netease/${encodeURIComponent(item.id)}`);
+  } else if (activeTab.value === "mv") {
+    router.push({ path: "/video", query: { id: item.id, type: "mv" } });
   } else {
     router.push(`/collection/netease/${activeTab.value}/${encodeURIComponent(item.id)}`);
   }
@@ -121,8 +134,8 @@ const handleClick = (item: CoverItem): void => {
       <div v-if="currentItems.length > 0" :key="activeTab" class="flex-1 min-h-0">
         <CoverList
           :items="currentItems"
-          :type="activeTab === 'artist' ? 'artist' : 'default'"
-          :min-size="activeTab === 'artist' ? 120 : 140"
+          :type="activeTab === 'artist' ? 'artist' : activeTab === 'mv' ? 'video' : 'default'"
+          :min-size="activeTab === 'artist' ? 120 : activeTab === 'mv' ? 200 : 140"
           :padding-x="20"
           :padding-top="8"
           :padding-bottom="20"

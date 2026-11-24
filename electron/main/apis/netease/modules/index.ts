@@ -92,6 +92,24 @@ import album_sublist from "./album_sublist";
 import artist_sub from "./artist_sub";
 import artist_sublist from "./artist_sublist";
 
+import mv_detail from "./mv_detail";
+import mv_url from "./mv_url";
+import mv_detail_info from "./mv_detail_info";
+import mv_sub from "./mv_sub";
+import mv_sublist from "./mv_sublist";
+import mv_all from "./mv_all";
+import artist_mv from "./artist_mv";
+import personalized_mv from "./personalized_mv";
+import simi_mv from "./simi_mv";
+import related_allvideo from "./related_allvideo";
+import video_detail from "./video_detail";
+import video_url from "./video_url";
+import video_detail_info from "./video_detail_info";
+import video_sub from "./video_sub";
+import comment_mv from "./comment_mv";
+import comment_video from "./comment_video";
+import resource_like from "./resource_like";
+
 export const modules: Record<string, NeteaseModule> = {
   captcha_sent,
   captcha_verify,
@@ -184,4 +202,22 @@ export const modules: Record<string, NeteaseModule> = {
   album_sublist,
   artist_sub,
   artist_sublist,
+
+  mv_detail,
+  mv_url,
+  mv_detail_info,
+  mv_sub,
+  mv_sublist,
+  mv_all,
+  artist_mv,
+  personalized_mv,
+  simi_mv,
+  related_allvideo,
+  video_detail,
+  video_url,
+  video_detail_info,
+  video_sub,
+  comment_mv,
+  comment_video,
+  resource_like,
 };

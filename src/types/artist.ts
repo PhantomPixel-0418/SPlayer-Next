@@ -12,6 +12,12 @@ export interface CoverItem {
   subtitle?: string;
   /** 歌曲数量 */
   trackCount: number;
+  /** 播放量（视频卡片） */
+  playCount?: number;
+  /** 时长毫秒（视频卡片） */
+  duration?: number;
+  /** 视频类型（视频卡片） */
+  videoKind?: "mv" | "video";
 }
 
 /** 歌手详情 */

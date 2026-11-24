@@ -7,7 +7,7 @@ export interface CoverListProps {
   /** 列表数据 */
   items: CoverItem[];
   /** 列表类型 */
-  type?: "default" | "artist";
+  type?: "default" | "artist" | "video";
   /** 是否虚拟滚动 */
   virtual?: boolean;
   /** 单项最小宽度（px） */
@@ -86,8 +86,13 @@ const colWidth = computed(() => {
   return (innerWidth.value - (columnCount.value - 1) * props.gap) / columnCount.value;
 });
 
-/** 行高 = 封面方形（aspect-square = colWidth）+ 信息区 + 行间距 */
-const rowHeight = computed(() => colWidth.value + INFO_HEIGHT + props.gap);
+/** 封面高度：视频卡片为 16:9，其余为正方形 */
+const coverHeight = computed(() =>
+  props.type === "video" ? (colWidth.value * 9) / 16 : colWidth.value,
+);
+
+/** 行高 = 封面高度 + 信息区 + 行间距 */
+const rowHeight = computed(() => coverHeight.value + INFO_HEIGHT + props.gap);
 
 interface Row {
   id: string;

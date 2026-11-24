@@ -126,7 +126,8 @@
     "totalSongs": "共 {count} 首",
     "totalAlbums": "共 {count} 张专辑",
     "totalArtists": "共 {count} 位歌手",
-    "totalPlaylists": "共 {count} 个歌单"
+    "totalPlaylists": "共 {count} 个歌单",
+    "totalMvs": "共 {count} 个 MV"
   },
   "comments": {
     "name": "歌曲评论",
@@ -353,6 +354,10 @@
       "title": "新碟上架",
       "subtitle": "新鲜出炉的专辑"
     },
+    "mvs": {
+      "title": "推荐 MV",
+      "subtitle": "为你精选的音乐视频"
+    },
     "hero": {
       "play": "立即播放",
       "addQueue": "添加到队列",
@@ -412,7 +417,8 @@
       "songs": "单曲",
       "albums": "专辑",
       "artists": "歌手",
-      "playlists": "歌单"
+      "playlists": "歌单",
+      "videos": "视频"
     }
   },
   "streaming": {
@@ -588,6 +594,7 @@
       "download": "下载歌曲",
       "deleteFile": "删除文件",
       "searchSame": "同名搜索",
+      "watchMv": "观看 MV",
       "more": "更多操作",
       "copyTitle": "复制歌曲名称",
       "copyId": "复制歌曲 ID",
@@ -741,7 +748,8 @@
     "tabs": {
       "playlist": "歌单",
       "album": "专辑",
-      "artist": "歌手"
+      "artist": "歌手",
+      "mv": "MV"
     }
   },
   "library": {
@@ -2415,7 +2423,41 @@
     "label": "艺术家",
     "songs": "歌曲",
     "totalArtists": "共 {count} 位",
-    "albums": "专辑"
+    "albums": "专辑",
+    "videos": "视频"
+  },
+  "video": {
+    "notFound": "缺少视频信息",
+    "loadFailed": "获取视频数据失败",
+    "playbackFailed": "播放地址获取失败",
+    "actionFailed": "操作失败，请稍后重试",
+    "empty": "暂无视频",
+    "visitArtist": "查看歌手详情",
+    "like": "点赞",
+    "subscribe": "收藏",
+    "share": "分享",
+    "related": "相关推荐",
+    "noDescription": "该视频暂无简介",
+    "comments": {
+      "hot": "最热评论",
+      "new": "最新评论",
+      "loading": "评论加载中...",
+      "empty": "暂无评论",
+      "failed": "获取评论失败"
+    },
+    "player": {
+      "play": "播放",
+      "pause": "暂停",
+      "speed": "速度",
+      "settings": "设置",
+      "normal": "正常",
+      "quality": "画质",
+      "pip": "画中画",
+      "enterFullscreen": "开启全屏",
+      "exitFullscreen": "退出全屏",
+      "mute": "静音",
+      "unmute": "取消静音"
+    }
   },
   "album": {
     "label": "专辑"

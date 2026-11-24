@@ -126,7 +126,8 @@
     "totalSongs": "{count} songs",
     "totalAlbums": "{count} albums",
     "totalArtists": "{count} artists",
-    "totalPlaylists": "{count} playlists"
+    "totalPlaylists": "{count} playlists",
+    "totalMvs": "{count} MVs"
   },
   "comments": {
     "name": "Song Comments",
@@ -353,6 +354,10 @@
       "title": "New Releases",
       "subtitle": "Freshly released albums"
     },
+    "mvs": {
+      "title": "Recommended MVs",
+      "subtitle": "Music videos picked for you"
+    },
     "hero": {
       "play": "Play now",
       "addQueue": "Add to queue",
@@ -412,7 +417,8 @@
       "songs": "Songs",
       "albums": "Albums",
       "artists": "Artists",
-      "playlists": "Playlists"
+      "playlists": "Playlists",
+      "videos": "Videos"
     }
   },
   "streaming": {
@@ -588,6 +594,7 @@
       "download": "Download Song",
       "deleteFile": "Delete File",
       "searchSame": "Search by Name",
+      "watchMv": "Watch MV",
       "more": "More",
       "copyTitle": "Copy Title",
       "copyId": "Copy Song ID",
@@ -741,7 +748,8 @@
     "tabs": {
       "playlist": "Playlists",
       "album": "Albums",
-      "artist": "Artists"
+      "artist": "Artists",
+      "mv": "MVs"
     }
   },
   "library": {
@@ -2415,7 +2423,41 @@
     "label": "Artists",
     "songs": "Songs",
     "totalArtists": "{count} artists",
-    "albums": "Albums"
+    "albums": "Albums",
+    "videos": "Videos"
+  },
+  "video": {
+    "notFound": "Missing video information",
+    "loadFailed": "Failed to load video",
+    "playbackFailed": "Failed to get the playback URL",
+    "actionFailed": "Action failed, please try again later",
+    "empty": "No videos",
+    "visitArtist": "View artist",
+    "like": "Like",
+    "subscribe": "Favorite",
+    "share": "Share",
+    "related": "Related",
+    "noDescription": "No description available",
+    "comments": {
+      "hot": "Top Comments",
+      "new": "Latest Comments",
+      "loading": "Loading comments...",
+      "empty": "No comments yet",
+      "failed": "Failed to load comments"
+    },
+    "player": {
+      "play": "Play",
+      "pause": "Pause",
+      "speed": "Speed",
+      "settings": "Settings",
+      "normal": "Normal",
+      "quality": "Quality",
+      "pip": "Picture-in-Picture",
+      "enterFullscreen": "Enter Fullscreen",
+      "exitFullscreen": "Exit Fullscreen",
+      "mute": "Mute",
+      "unmute": "Unmute"
+    }
   },
   "album": {
     "label": "Albums"

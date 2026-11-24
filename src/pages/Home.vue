@@ -13,6 +13,7 @@ import { navigateToPlaylist, navigateToArtist, navigateToAlbum } from "@/utils/n
 import * as player from "@/core/player";
 
 const { t } = useI18n();
+const router = useRouter();
 const { isFloatingBar } = useFloatingPlayerBar();
 
 /** 头部 */
@@ -36,7 +37,7 @@ const {
   load: loadContinue,
 } = useContinueListening();
 
-/** 推荐内容：推荐歌单 / 雷达 / 歌手 / 新碟 */
+/** 推荐内容：推荐歌单 / 雷达 / 歌手 / 新碟 / MV */
 const {
   recommendPlaylists,
   recommendTitle,
@@ -44,6 +45,7 @@ const {
   radarPlaylists,
   artists,
   newAlbums,
+  recommendMvs,
   load: loadDiscover,
 } = useHomeDiscover();
 
@@ -73,6 +75,11 @@ const openArtist = (item: CoverItem): void => {
 /** 打开专辑页 */
 const openAlbum = (item: CoverItem): void => {
   navigateToAlbum(item.title, { source: "netease", albumId: item.id });
+};
+
+/** 打开 MV 页 */
+const openMv = (item: CoverItem): void => {
+  router.push({ path: "/video", query: { id: item.id, type: "mv" } });
 };
 </script>
 
@@ -236,6 +243,21 @@ const openAlbum = (item: CoverItem): void => {
           <p class="mt-0.5 text-xs text-on-surface-variant/50">{{ recommendSubtitle }}</p>
         </div>
         <CoverList :items="recommendPlaylists" :virtual="false" :gap="16" @click="openPlaylist" />
+      </section>
+      <!-- 推荐 MV -->
+      <section v-if="recommendMvs.length > 0" class="flex flex-col gap-3">
+        <div>
+          <h3 class="text-lg font-semibold text-on-surface">{{ t("home.mvs.title") }}</h3>
+          <p class="mt-0.5 text-xs text-on-surface-variant/50">{{ t("home.mvs.subtitle") }}</p>
+        </div>
+        <CoverList
+          :items="recommendMvs"
+          type="video"
+          :min-size="240"
+          :virtual="false"
+          :gap="16"
+          @click="openMv"
+        />
       </section>
       <!-- 雷达歌单 -->
       <section v-if="radarPlaylists.length > 0" class="flex flex-col gap-3">

@@ -7,6 +7,8 @@ import { toast } from "@/composables/useToast";
 import { loadArtist as loadArtistService } from "@/services/artistLoader";
 import { fetchArtistSongs } from "@/apis/artist/netease";
 import { fetchQQMusicArtistSongs } from "@/apis/artist/qqmusic";
+import { getArtistVideos } from "@/apis/video";
+import { videoToCoverItem } from "@/utils/format/video";
 import { navigateToAlbum } from "@/utils/navigate";
 import SongList from "@/components/list/SongList.vue";
 import { formatTime } from "@/utils/time";
@@ -196,9 +198,40 @@ const handleMoreMenu = (key: string) => {
   if (key === "batchManage") songListRef.value?.enterBatch();
 };
 
-type ArtistTab = "songs" | "albums";
+type ArtistTab = "songs" | "albums" | "videos";
 
-const ARTIST_TAB_KEYS: readonly ArtistTab[] = ["songs", "albums"];
+const ARTIST_TAB_KEYS: readonly ArtistTab[] = ["songs", "albums", "videos"];
+
+/** 歌手视频列表 */
+const videoItems = shallowRef<CoverItem[]>([]);
+const videosLoading = ref(false);
+const videosLoaded = ref(false);
+const videosHasMore = ref(false);
+const videosLoadingMore = ref(false);
+
+/** 加载歌手 MV，首屏或追加分页 */
+const loadVideos = async (append = false): Promise<void> => {
+  if (source !== "netease" || (append && (videosLoadingMore.value || !videosHasMore.value))) return;
+  if (!append && videosLoading.value) return;
+  if (append) videosLoadingMore.value = true;
+  else videosLoading.value = true;
+  try {
+    const page = await getArtistVideos(
+      decodeURIComponent(id),
+      append ? videoItems.value.length : 0,
+      30,
+    );
+    const next = page.items.map(videoToCoverItem);
+    videoItems.value = append ? [...videoItems.value, ...next] : next;
+    videosHasMore.value = page.hasMore;
+    videosLoaded.value = true;
+  } catch (err) {
+    if (!append) toast.error(err instanceof Error ? err.message : String(err));
+  } finally {
+    videosLoading.value = false;
+    videosLoadingMore.value = false;
+  }
+};
 
 /** 当前 tab */
 const activeTab = computed<ArtistTab>(() => {
@@ -214,12 +247,17 @@ const onTabSwitch = (key: string): void => {
 
 watch(activeTab, (tab) => {
   if (tab === "albums") collapsed.value = true;
+  /** 切到视频 tab 时按需加载 */
+  if (tab === "videos" && !videosLoaded.value && !videosLoading.value) void loadVideos();
 });
 
 const tabs = computed(() => {
   const items = [{ key: "songs", label: t("artist.songs") }];
   if (artist.value?.albums.length) {
     items.push({ key: "albums", label: t("artist.albums") });
+  }
+  if (source === "netease") {
+    items.push({ key: "videos", label: t("artist.videos") });
   }
   return items;
 });
@@ -397,6 +435,33 @@ const albumItems = computed<CoverItem[]>(() => {
                   })
               "
             />
+          </div>
+          <!-- 视频网格 -->
+          <div v-else key="videos" class="flex-1 min-h-0">
+            <CoverList
+              v-if="videoItems.length > 0"
+              :items="videoItems"
+              type="video"
+              :min-size="200"
+              :padding-x="20"
+              :padding-bottom="24"
+              :has-more="videosHasMore"
+              :loading-more="videosLoadingMore"
+              @click="(item) => router.push({ path: '/video', query: { id: item.id, type: 'mv' } })"
+              @reach-bottom="loadVideos(true)"
+            />
+            <div v-else-if="videosLoading" class="h-full flex items-center justify-center">
+              <div class="text-center text-on-surface-variant/60">
+                <SLoading class="text-4xl text-primary/70 mb-4 mx-auto block" />
+                <div class="text-sm">{{ t("common.loading") }}</div>
+              </div>
+            </div>
+            <div v-else class="h-full flex items-center justify-center">
+              <div class="text-center text-on-surface-variant/50">
+                <IconLucideClapperboard class="size-12 mx-auto mb-3 opacity-30" />
+                <div class="text-sm">{{ t("video.empty") }}</div>
+              </div>
+            </div>
           </div>
         </Transition>
       </div>

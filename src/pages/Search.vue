@@ -4,7 +4,14 @@ defineOptions({ name: "SearchPage" });
 import type { PlaybackContext, Track } from "@shared/types/player";
 import { ALL_PLATFORMS, PLATFORM_SHORT_NAME, type Platform } from "@shared/types/platform";
 import type { CoverItem } from "@/types/artist";
-import { searchSongs, searchAlbums, searchArtists, searchPlaylists } from "@/apis/search";
+import {
+  searchSongs,
+  searchAlbums,
+  searchArtists,
+  searchPlaylists,
+  searchVideos,
+} from "@/apis/search";
+import { videoToCoverItem } from "@/utils/format/video";
 import { useStatusStore } from "@/stores/status";
 import { usePluginsStore } from "@/stores/plugins";
 import { navigateToAlbum, navigateToArtist, navigateToPlaylist } from "@/utils/navigate";
@@ -15,9 +22,9 @@ const router = useRouter();
 const status = useStatusStore();
 const plugins = usePluginsStore();
 
-type TabKey = "songs" | "albums" | "artists" | "playlists";
+type TabKey = "songs" | "albums" | "artists" | "playlists" | "videos";
 
-const TAB_KEYS: readonly TabKey[] = ["songs", "albums", "artists", "playlists"];
+const TAB_KEYS: readonly TabKey[] = ["songs", "albums", "artists", "playlists", "videos"];
 
 const PAGE_SIZE = 50;
 
@@ -27,12 +34,19 @@ const activeTab = ref<TabKey>("songs");
 /** 当前生效的关键词 */
 const keyword = ref("");
 
-const tabs = computed(() => [
-  { key: "songs", label: t("search.tabs.songs") },
-  { key: "albums", label: t("search.tabs.albums") },
-  { key: "artists", label: t("search.tabs.artists") },
-  { key: "playlists", label: t("search.tabs.playlists") },
-]);
+const tabs = computed(() => {
+  const items = [
+    { key: "songs", label: t("search.tabs.songs") },
+    { key: "albums", label: t("search.tabs.albums") },
+    { key: "artists", label: t("search.tabs.artists") },
+    { key: "playlists", label: t("search.tabs.playlists") },
+  ];
+  /** MV 搜索仅网易云支持 */
+  if (!isPluginTab.value && status.searchPlatform === "netease") {
+    items.push({ key: "videos", label: t("search.tabs.videos") });
+  }
+  return items;
+});
 
 const platformTabs = computed(() => [
   ...ALL_PLATFORMS.map((key) => ({ key, label: PLATFORM_SHORT_NAME[key] })),
@@ -127,17 +141,30 @@ const states = {
   albums: shallowReactive(createState<CoverItem>()),
   artists: shallowReactive(createState<CoverItem>()),
   playlists: shallowReactive(createState<CoverItem>()),
+  videos: shallowReactive(createState<CoverItem>()),
 };
 let searchGeneration = 0;
 
 const error = ref("");
 
 /** 派发到 apis 层的统一调用 */
+/** 视频结果转为通用封面卡片 */
+const searchVideoCovers = async (
+  platform: Platform,
+  keyword: string,
+  offset: number,
+  limit: number,
+): Promise<{ items: CoverItem[]; total: number; hasMore: boolean }> => {
+  const result = await searchVideos(platform, keyword, offset, limit);
+  return { ...result, items: result.items.map(videoToCoverItem) };
+};
+
 const fetchers = {
   songs: searchSongs,
   albums: searchAlbums,
   artists: searchArtists,
   playlists: searchPlaylists,
+  videos: searchVideoCovers,
 } as const;
 
 /**
@@ -228,10 +255,13 @@ let lastAvailable = true;
 const syncFromRoute = (): void => {
   if (route.name !== "search") return;
   const q = typeof route.query.q === "string" ? route.query.q.trim() : "";
-  const tab =
+  const requestedTab =
     typeof route.query.tab === "string" && (TAB_KEYS as readonly string[]).includes(route.query.tab)
       ? (route.query.tab as TabKey)
       : "songs";
+  /** MV 搜索仅网易云支持 */
+  const tab =
+    requestedTab === "videos" && status.searchPlatform !== "netease" ? "songs" : requestedTab;
 
   if (activeTab.value !== tab) error.value = "";
   activeTab.value = tab;
@@ -275,9 +305,11 @@ const onPlatformSwitch = (key: string): void => {
         pluginSources.value[0])
       : undefined;
   if (key !== "plugin") status.searchPlatform = key as Platform;
+  const fallbackTab = activeTab.value === "videos" && key !== "netease" ? "songs" : undefined;
   router.replace({
     query: {
       ...route.query,
+      ...(fallbackTab ? { tab: fallbackTab } : {}),
       platform: key === "plugin" ? "plugin" : undefined,
       plugin: source?.pluginId,
       source: source?.source,
@@ -466,7 +498,7 @@ const playbackContext = computed<PlaybackContext>(() => ({
         @reach-bottom="onReachBottom('artists')"
       />
       <CoverList
-        v-else
+        v-else-if="activeTab === 'playlists'"
         :items="states.playlists.items"
         :padding-x="20"
         :padding-top="8"
@@ -477,6 +509,19 @@ const playbackContext = computed<PlaybackContext>(() => ({
           (item) => navigateToPlaylist(item.id, { source: status.searchPlatform, name: item.title })
         "
         @reach-bottom="onReachBottom('playlists')"
+      />
+      <CoverList
+        v-else
+        :items="states.videos.items"
+        type="video"
+        :min-size="200"
+        :padding-x="20"
+        :padding-top="8"
+        :padding-bottom="20"
+        :has-more="states.videos.hasMore"
+        :loading-more="states.videos.loadingMore"
+        @click="(item) => router.push({ path: '/video', query: { id: item.id, type: 'mv' } })"
+        @reach-bottom="onReachBottom('videos')"
       />
     </div>
   </div>

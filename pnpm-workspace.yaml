@@ -3,6 +3,7 @@ minimumReleaseAge: 4320
 allowBuilds:
   "@parcel/watcher": false
   better-sqlite3: true
+  core-js: false
   electron: true
   electron-winstaller: true
   esbuild: true

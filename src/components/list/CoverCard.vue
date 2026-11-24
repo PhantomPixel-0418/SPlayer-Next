@@ -2,12 +2,14 @@
 import type { CoverItem } from "@/types/artist";
 import artistFallback from "@/assets/images/artist.jpg";
 import { captureCover } from "@/services/coverTransition";
+import { formatCompact } from "@/utils/format";
+import { formatTime } from "@/utils/time";
 
 export interface CoverCardProps {
   /** 卡片数据 */
   item: CoverItem;
-  /** 类型：default / artist */
-  type?: "default" | "artist";
+  /** 类型：default / artist / video */
+  type?: "default" | "artist" | "video";
   /** 封面圆角 class */
   rounded?: string;
   /** 封面占位图 */
@@ -20,6 +22,7 @@ const props = withDefaults(defineProps<CoverCardProps>(), {
 });
 
 const emit = defineEmits<{ click: [] }>();
+const { locale } = useI18n();
 /** 稳定的封面标识：页面重新挂载后仍能匹配，不能用组件实例 ID */
 const coverKey = computed(() => `${props.type}:${props.item.id}`);
 
@@ -30,7 +33,16 @@ const handleClick = (): void => {
 };
 
 const coverRounded = computed(() => (props.type === "artist" ? "rounded-full" : props.rounded));
+const coverAspect = computed(() => (props.type === "video" ? "aspect-video" : "aspect-square"));
 const actualFallback = computed(() => (props.type === "artist" ? artistFallback : props.fallback));
+/** 视频播放量 */
+const playCountText = computed(() =>
+  props.type === "video" ? formatCompact(props.item.playCount, locale.value) : "",
+);
+/** 视频时长 */
+const durationText = computed(() =>
+  props.type === "video" && props.item.duration ? formatTime(props.item.duration) : "",
+);
 </script>
 
 <template>
@@ -46,9 +58,21 @@ const actualFallback = computed(() => (props.type === "artist" ? artistFallback 
         :src="item.cover"
         :fallback="actualFallback"
         :alt="item.title"
-        class="cover-card-image w-full aspect-square transition-[transform,filter] duration-300 ease-out group-hover:scale-108 group-hover:brightness-80"
-        :class="coverRounded"
+        class="cover-card-image w-full transition-[transform,filter] duration-300 ease-out group-hover:scale-108 group-hover:brightness-80"
+        :class="[coverRounded, coverAspect]"
       />
+      <!-- 视频统计 -->
+      <div
+        v-if="type === 'video'"
+        class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6 text-[11px] font-medium text-white"
+      >
+        <span v-if="playCountText" class="flex items-center gap-1">
+          <IconLucidePlay class="size-3" />
+          {{ playCountText }}
+        </span>
+        <span v-else />
+        <span v-if="durationText">{{ durationText }}</span>
+      </div>
       <!-- 播放按钮 -->
       <div
         data-cover-action
@@ -56,7 +80,9 @@ const actualFallback = computed(() => (props.type === "artist" ? artistFallback 
         :class="
           type === 'artist'
             ? 'inset-0 m-auto'
-            : 'right-2 bottom-2 bg-white/50 translate-y-1.5 group-hover:translate-y-0'
+            : type === 'video'
+              ? 'inset-0 m-auto bg-white/50 scale-90 group-hover:scale-100'
+              : 'right-2 bottom-2 bg-white/50 translate-y-1.5 group-hover:translate-y-0'
         "
       >
         <IconLucidePlay v-if="type !== 'artist'" class="size-4.5 text-white" />
@@ -89,11 +115,11 @@ const actualFallback = computed(() => (props.type === "artist" ? artistFallback 
 [data-cover-shared] {
   transform: none !important;
   filter: none !important;
-  transition: none;
+  transition: none !important;
 }
 
-[data-cover-shared] + [data-cover-action] {
+[data-cover-shared] ~ [data-cover-action] {
   opacity: 0 !important;
-  transition: none;
+  transition: none !important;
 }
 </style>

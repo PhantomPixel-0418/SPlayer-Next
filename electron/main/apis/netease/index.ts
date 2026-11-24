@@ -85,6 +85,16 @@ const NON_CACHEABLE: ReadonlySet<string> = new Set([
   "personal_fm",
   "fm_trash",
   "recommend_songs",
+  "mv_detail",
+  "mv_url",
+  "mv_detail_info",
+  "mv_sub",
+  "mv_sublist",
+  "video_detail",
+  "video_url",
+  "video_detail_info",
+  "video_sub",
+  "resource_like",
 ]);
 
 /** 无需初始化平台匿名登录态的公开接口 */

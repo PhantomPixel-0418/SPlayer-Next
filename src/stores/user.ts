@@ -30,6 +30,8 @@ import {
 import { subscribeAlbum } from "@/apis/album/netease";
 import { subscribeArtist } from "@/apis/artist/netease";
 import { fetchUserCloud, deleteCloudSongs } from "@/apis/cloud/netease";
+import { fetchAllSubscribedMvs, setVideoSubscribed } from "@/apis/video";
+import type { VideoItem } from "@/types/video";
 
 /** 登录 cookie 保活间隔 */
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -108,6 +110,8 @@ export const useUserStore = defineStore(
     const albums = shallowRef<Album[]>([]);
     /** 收藏歌手 */
     const artists = shallowRef<Artist[]>([]);
+    /** 收藏 MV */
+    const mvs = shallowRef<VideoItem[]>([]);
     /** 用户等级 */
     const level = ref<number | undefined>(undefined);
     /** 订阅计数 */
@@ -212,6 +216,7 @@ export const useUserStore = defineStore(
       likedSongIds.value = new Set();
       albums.value = [];
       artists.value = [];
+      mvs.value = [];
       level.value = undefined;
       subcount.value = EMPTY_SUBCOUNT;
       likedPlaylistAbort?.abort();
@@ -499,15 +504,17 @@ export const useUserStore = defineStore(
         fetchUserAlbums(),
         fetchUserArtists(),
         fetchUserLevel(),
+        fetchAllSubscribedMvs(),
       ]);
       if (requestId !== contentRequestId || profile.value?.userId !== uid) return;
-      const [_plRes, likeRes, albumRes, artistRes, levelRes] = settled;
+      const [_plRes, likeRes, albumRes, artistRes, levelRes, mvRes] = settled;
       if (likeRes.status === "fulfilled" && likedVersion === likedSongIdsVersion) {
         applyLikedSongIds(likeRes.value);
       }
       if (albumRes.status === "fulfilled") albums.value = albumRes.value;
       if (artistRes.status === "fulfilled") artists.value = artistRes.value;
       if (levelRes.status === "fulfilled") level.value = levelRes.value;
+      if (mvRes.status === "fulfilled") mvs.value = mvRes.value;
       for (const result of settled) {
         if (result.status === "rejected") {
           console.warn("[user] content load failed:", result.reason);
@@ -713,6 +720,12 @@ export const useUserStore = defineStore(
       artists.value = await fetchUserArtists();
     };
 
+    /** 收藏 / 取消收藏 MV */
+    const toggleMvSubscribe = async (mvId: string, subscribe: boolean): Promise<void> => {
+      await setVideoSubscribed("mv", mvId, subscribe);
+      mvs.value = await fetchAllSubscribedMvs();
+    };
+
     /** 同步用户内容 */
     const syncContent = (uid: number | undefined): void => {
       if (uid) void loadContent(uid);
@@ -794,6 +807,7 @@ export const useUserStore = defineStore(
       likedSongIds,
       albums,
       artists,
+      mvs,
       level,
       subcount,
       likedPlaylistId,
@@ -825,6 +839,7 @@ export const useUserStore = defineStore(
       togglePlaylistSubscribe,
       toggleAlbumSubscribe,
       toggleArtistSubscribe,
+      toggleMvSubscribe,
     };
   },
   {

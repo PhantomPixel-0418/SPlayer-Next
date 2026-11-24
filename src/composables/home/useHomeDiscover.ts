@@ -6,6 +6,8 @@ import {
   fetchArtists,
   fetchNewAlbums,
 } from "@/apis/recommend/netease";
+import { getRecommendedMvs } from "@/apis/video";
+import { videoToCoverItem } from "@/utils/format/video";
 
 /** 首页推荐内容缓存有效期 */
 const CACHE_TTL = 30 * 60 * 1000;
@@ -18,6 +20,7 @@ interface DiscoverCache {
   radar: CoverItem[];
   artists: CoverItem[];
   albums: CoverItem[];
+  mvs: CoverItem[];
 }
 
 /** 模块级缓存，跨页面 / 重新挂载复用 */
@@ -48,6 +51,8 @@ export const useHomeDiscover = () => {
   const artists = shallowRef<CoverItem[]>([]);
   /** 新碟上架 */
   const newAlbums = shallowRef<CoverItem[]>([]);
+  /** 推荐 MV */
+  const recommendMvs = shallowRef<CoverItem[]>([]);
 
   /** 推荐歌单标题 */
   const recommendTitle = computed(() =>
@@ -64,6 +69,7 @@ export const useHomeDiscover = () => {
     radarPlaylists.value = data.radar;
     artists.value = data.artists;
     newAlbums.value = data.albums;
+    recommendMvs.value = data.mvs ?? [];
   };
 
   /** 拉取首页推荐内容 */
@@ -73,13 +79,17 @@ export const useHomeDiscover = () => {
       apply(cache);
       return;
     }
-    const [recommend, radar, artistList, albums] = await Promise.all([
+    const [recommend, radar, artistList, albums, mvs] = await Promise.all([
       safe("recommend playlists", fetchRecommendPlaylists(loggedIn)),
       loggedIn ? safe("radar playlists", fetchRadarPlaylists()) : Promise.resolve<CoverItem[]>([]),
       safe("artists", fetchArtists()),
       safe("new albums", fetchNewAlbums()),
+      safe(
+        "recommend mvs",
+        getRecommendedMvs().then((items) => items.map(videoToCoverItem)),
+      ),
     ]);
-    cache = { at: Date.now(), loggedIn, recommend, radar, artists: artistList, albums };
+    cache = { at: Date.now(), loggedIn, recommend, radar, artists: artistList, albums, mvs };
     apply(cache);
   };
 
@@ -98,6 +108,7 @@ export const useHomeDiscover = () => {
     radarPlaylists,
     artists,
     newAlbums,
+    recommendMvs,
     load,
   };
 };

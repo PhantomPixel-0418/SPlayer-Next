@@ -111,6 +111,7 @@ export const songToTrack = (song: NeteaseSong): Track => {
     fee: song.fee,
     explicit: song.mark != null && (song.mark & NETEASE_EXPLICIT_MARK) !== 0 ? true : undefined,
     cloud: song.pc != null ? true : undefined,
+    mv: song.mv ? String(song.mv) : undefined,
   };
 };
 

@@ -5,10 +5,12 @@
 
 import type { Track } from "@shared/types/player";
 import type { CoverItem } from "@/types/artist";
+import type { VideoItem } from "@/types/video";
 import type { Platform } from "@shared/types/platform";
 import * as netease from "./netease";
 import * as qqmusic from "./qqmusic";
 import * as kugou from "./kugou";
+import { searchVideos as searchNeteaseVideos } from "@/apis/video";
 
 /** 搜索结果通用 */
 export interface SearchResult<T> {
@@ -71,4 +73,15 @@ export const searchPlaylists = (
   if (platform === "qqmusic") return qqmusic.playlists(keyword, offset, limit);
   if (platform === "kugou") return kugou.playlists(keyword, offset, limit);
   return unsupported(platform, "playlists");
+};
+
+/** 搜索 MV，当前仅支持网易云 */
+export const searchVideos = async (
+  platform: Platform,
+  keyword: string,
+  offset: number,
+  limit: number,
+): Promise<SearchResult<VideoItem>> => {
+  if (platform !== "netease") return unsupported(platform, "videos");
+  return searchNeteaseVideos(keyword, offset, limit);
 };

@@ -154,6 +154,8 @@ export interface Track {
   explicit?: boolean;
   /** 云盘歌曲 */
   cloud?: boolean;
+  /** 关联 MV id（网易云） */
+  mv?: string;
 }
 
 /** 播放队列项，将曲目元数据与本次播放上下文分离 */
