@@ -247,9 +247,16 @@ const onTabSwitch = (key: string): void => {
 
 watch(activeTab, (tab) => {
   if (tab === "albums") collapsed.value = true;
-  /** 切到视频 tab 时按需加载 */
-  if (tab === "videos" && !videosLoaded.value && !videosLoading.value) void loadVideos();
 });
+
+/** 首次挂载或切到视频 tab 时按需加载（路由直达 tab=videos 时组件会重新挂载） */
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === "videos" && !videosLoaded.value && !videosLoading.value) void loadVideos();
+  },
+  { immediate: true },
+);
 
 const tabs = computed(() => {
   const items = [{ key: "songs", label: t("artist.songs") }];
@@ -395,8 +402,9 @@ const albumItems = computed<CoverItem[]>(() => {
       />
     </div>
     <Transition name="fade" mode="out-in" :duration="150">
+      <!-- 视频 / 专辑不依赖歌曲列表，仅歌曲 tab 受非空歌曲约束 -->
       <div
-        v-if="artist && artist.tracks.length > 0"
+        v-if="artist && (activeTab !== 'songs' || artist.tracks.length > 0)"
         :key="artist.id"
         class="flex-1 min-h-0 flex flex-col"
       >

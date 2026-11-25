@@ -95,6 +95,8 @@ export const useUserStore = defineStore(
     let accountVersion = 0;
     let contentHydrated = false;
     let likedSongIdsVersion = 0;
+    /** 收藏 MV 列表代次，避免全量拉取的旧快照覆盖收藏操作结果 */
+    let mvListVersion = 0;
     let likedPlaylistSongIds: string[] | null = null;
     let likedPlaylistSyncPromise: Promise<void> | null = null;
     let invalidationPromise: Promise<void> | null = null;
@@ -210,6 +212,7 @@ export const useUserStore = defineStore(
       contentRequestId++;
       contentHydrated = false;
       likedSongIdsVersion++;
+      mvListVersion++;
       likedPlaylistSongIds = null;
       likedPlaylistSyncPromise = null;
       playlists.value = [];
@@ -495,6 +498,7 @@ export const useUserStore = defineStore(
       if (!uid || profile.value?.userId !== uid) return;
       const requestId = ++contentRequestId;
       const likedVersion = likedSongIdsVersion;
+      const mvVersion = mvListVersion;
       /** 缓存即时上屏，不阻塞后续网络 */
       await hydrateContentFromCache(uid);
       if (requestId !== contentRequestId || profile.value?.userId !== uid) return;
@@ -514,7 +518,7 @@ export const useUserStore = defineStore(
       if (albumRes.status === "fulfilled") albums.value = albumRes.value;
       if (artistRes.status === "fulfilled") artists.value = artistRes.value;
       if (levelRes.status === "fulfilled") level.value = levelRes.value;
-      if (mvRes.status === "fulfilled") mvs.value = mvRes.value;
+      if (mvRes.status === "fulfilled" && mvVersion === mvListVersion) mvs.value = mvRes.value;
       for (const result of settled) {
         if (result.status === "rejected") {
           console.warn("[user] content load failed:", result.reason);
@@ -722,8 +726,19 @@ export const useUserStore = defineStore(
 
     /** 收藏 / 取消收藏 MV */
     const toggleMvSubscribe = async (mvId: string, subscribe: boolean): Promise<void> => {
+      const version = accountVersion;
       await setVideoSubscribed("mv", mvId, subscribe);
-      mvs.value = await fetchAllSubscribedMvs();
+      if (version !== accountVersion) return;
+      /** 使在途的全量拉取失效，避免旧快照覆盖本次结果 */
+      const listVersion = ++mvListVersion;
+      try {
+        const list = await fetchAllSubscribedMvs();
+        if (version === accountVersion && listVersion === mvListVersion) mvs.value = list;
+      } catch (err) {
+        /** 收藏已生效，列表同步失败不回滚，待下次内容同步恢复；取消收藏先本地移除 */
+        console.warn("[user] refresh subscribed mvs failed:", err);
+        if (!subscribe) mvs.value = mvs.value.filter((item) => item.id !== mvId);
+      }
     };
 
     /** 同步用户内容 */

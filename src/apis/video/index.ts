@@ -86,7 +86,10 @@ const toVideoItem = (raw: RawVideo, kind: VideoKind): VideoItem => {
 /** 校验网易云响应 code */
 const ensureOk = <T>(body: T): T => {
   const meta = body as { code?: number; message?: string; msg?: string } | null | undefined;
-  if (!meta || meta.code !== 200) throw new Error(meta?.message ?? meta?.msg ?? "");
+  if (!meta || meta.code !== 200) {
+    const detail = meta?.code == null ? "unknown" : String(meta.code);
+    throw new Error(meta?.message ?? meta?.msg ?? `接口返回异常（code=${detail}）`);
+  }
   return body;
 };
 
@@ -293,7 +296,7 @@ export const fetchAllSubscribedMvs = async (): Promise<VideoItem[]> => {
   for (;;) {
     const page = await getSubscribedMvs(items.length, limit);
     items.push(...page.items);
-    if (!page.hasMore || !page.items.length || items.length >= 1000) break;
+    if (!page.hasMore || !page.items.length) break;
   }
   return items;
 };

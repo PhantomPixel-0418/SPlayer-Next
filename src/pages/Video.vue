@@ -157,6 +157,8 @@ const comments = reactive<Record<CommentTabKey, CommentState>>({
   hot: { list: [], total: 0, page: 1, loading: false, loaded: false },
   new: { list: [], total: 0, page: 1, loading: false, loaded: false },
 });
+/** 各分类评论请求代次，用于丢弃过期响应 */
+const commentRequests: Record<CommentTabKey, number> = { hot: 0, new: 0 };
 
 const commentTabs = computed(() =>
   (["hot", "new"] as CommentTabKey[]).map((key) => ({
@@ -172,7 +174,9 @@ const commentMaxPage = computed(() =>
 
 /** 重置评论分页 */
 const resetComments = (): void => {
-  for (const state of Object.values(comments)) {
+  for (const key of ["hot", "new"] as CommentTabKey[]) {
+    commentRequests[key] += 1;
+    const state = comments[key];
     state.list = [];
     state.total = 0;
     state.page = 1;
@@ -191,6 +195,7 @@ const loadComments = async (tab: CommentTabKey, page = 1): Promise<void> => {
   const state = comments[tab];
   if (!videoId.value || state.loading) return;
   const token = loadToken;
+  const request = ++commentRequests[tab];
   state.loading = true;
   try {
     const data = await getVideoComments(
@@ -200,23 +205,26 @@ const loadComments = async (tab: CommentTabKey, page = 1): Promise<void> => {
       COMMENT_LIMIT,
       tab === "hot",
     );
-    if (token !== loadToken) return;
+    if (token !== loadToken || request !== commentRequests[tab]) return;
     state.list = data.list;
     state.total = data.total;
     state.page = page;
     state.loaded = true;
   } catch (err) {
-    if (token !== loadToken) return;
+    if (token !== loadToken || request !== commentRequests[tab]) return;
     toast.error(err instanceof Error && err.message ? err.message : t("video.comments.failed"));
   } finally {
-    if (token === loadToken) state.loading = false;
+    if (token === loadToken && request === commentRequests[tab]) state.loading = false;
   }
 };
 
 /** 刷新评论（与歌曲评论一致，同时重拉两个分类的首屏以刷新 tab 计数） */
 const refreshComments = async (): Promise<void> => {
   for (const key of ["hot", "new"] as CommentTabKey[]) {
+    /** 使在途请求失效并解除 loading 占用，保证刷新可以覆盖进行中的加载 */
+    commentRequests[key] += 1;
     comments[key].page = 1;
+    comments[key].loading = false;
     comments[key].loaded = false;
   }
   if (commentTab.value !== "hot") commentTab.value = "hot";
@@ -304,15 +312,20 @@ const toggleLike = async (): Promise<void> => {
   const current = detail.value;
   if (!current || likeBusy.value) return;
   likeBusy.value = true;
+  const token = loadToken;
   const next = !current.liked;
   try {
     await setVideoLiked(kind.value, videoId.value, next);
+    /** 切换视频后丢弃过期结果；只更新点赞字段，避免覆盖并发的收藏结果 */
+    const latest = detail.value;
+    if (token !== loadToken || !latest) return;
     detail.value = {
-      ...current,
+      ...latest,
       liked: next,
-      likedCount: Math.max(0, current.likedCount + (next ? 1 : -1)),
+      likedCount: Math.max(0, latest.likedCount + (next ? 1 : -1)),
     };
   } catch (err) {
+    if (token !== loadToken) return;
     toast.error(err instanceof Error && err.message ? err.message : t("video.actionFailed"));
   } finally {
     likeBusy.value = false;
@@ -333,16 +346,21 @@ const toggleSubscribe = async (): Promise<void> => {
   const current = detail.value;
   if (!current || subBusy.value) return;
   subBusy.value = true;
+  const token = loadToken;
   const next = !subscribed.value;
   try {
     if (kind.value === "mv") await user.toggleMvSubscribe(videoId.value, next);
     else await setVideoSubscribed(kind.value, videoId.value, next);
+    /** 切换视频后丢弃过期结果；只更新收藏字段，避免覆盖并发的点赞结果 */
+    const latest = detail.value;
+    if (token !== loadToken || !latest) return;
     detail.value = {
-      ...current,
+      ...latest,
       subscribed: next,
-      subCount: Math.max(0, current.subCount + (next ? 1 : -1)),
+      subCount: Math.max(0, latest.subCount + (next ? 1 : -1)),
     };
   } catch (err) {
+    if (token !== loadToken) return;
     toast.error(err instanceof Error && err.message ? err.message : t("video.actionFailed"));
   } finally {
     subBusy.value = false;
