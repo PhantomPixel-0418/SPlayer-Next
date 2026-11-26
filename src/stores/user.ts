@@ -735,9 +735,11 @@ export const useUserStore = defineStore(
         const list = await fetchAllSubscribedMvs();
         if (version === accountVersion && listVersion === mvListVersion) mvs.value = list;
       } catch (err) {
-        /** 收藏已生效，列表同步失败不回滚，待下次内容同步恢复；取消收藏先本地移除 */
+        /** 收藏已生效，列表同步失败不回滚，待下次内容同步恢复；取消收藏在代次一致时先本地移除 */
         console.warn("[user] refresh subscribed mvs failed:", err);
-        if (!subscribe) mvs.value = mvs.value.filter((item) => item.id !== mvId);
+        if (!subscribe && version === accountVersion && listVersion === mvListVersion) {
+          mvs.value = mvs.value.filter((item) => item.id !== mvId);
+        }
       }
     };
 
